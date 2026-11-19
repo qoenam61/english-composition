@@ -25,7 +25,7 @@ describe("StudyService", () => {
       if (last.kind === "graded" && last.chapterCompleted) break;
     }
     expect(n + 1).toBe(6);
-    expect(svc.notesView().completed).toHaveLength(3);
+    expect((await svc.notesView()).completed).toHaveLength(3);
     expect(await store.dueReviews("u", clock.t)).toEqual([]);
     expect(await store.dueReviews("u", clock.t + 86_400_000 + 1)).toHaveLength(3);
     const again = mk(store, clock).svc;
@@ -37,19 +37,19 @@ describe("StudyService", () => {
     await svc.open(); const c = svc.next()!;
     const r = await svc.submit(c.sentenceId, "totally different words", false, 1000);
     expect(r).toMatchObject({ kind: "graded", verdict: "FAIL" });
-    expect(svc.notesView().wrong).toHaveLength(1);
+    expect((await svc.notesView()).wrong).toHaveLength(1);
     const g = new GradingService({ judge: async () => { throw new Error("down"); } });
     const e = new StudyService({ userId: "x", content, store: new SqliteUserStore(), grading: g, rng: lcg(1), now: () => 0, tracks: ["original"] });
     await e.open(); const cc = e.next()!;
     expect((await e.submit(cc.sentenceId, "totally different words", false, 0)).kind).toBe("error");
-    expect(e.notesView().wrong).toHaveLength(0);
+    expect((await e.notesView()).wrong).toHaveLength(0);
   });
   it("재접속해도 오답노트가 복원되고 통계가 쌓인다", async () => {
     const { svc, store, clock } = mk();
     await svc.open(); const c = svc.next()!;
     await svc.submit(c.sentenceId, "totally different words", false, 3000);
     const again = mk(store, clock).svc; await again.open();
-    expect(again.notesView().wrong).toHaveLength(1);
+    expect((await again.notesView()).wrong).toHaveLength(1);
     expect((await again.statsView()).today.attempts).toBe(1);
   });
   it("자유 훈련(취약 패턴): 오답 패턴만 출제하고 진도는 바꾸지 않으며 요약을 낸다", async () => {
@@ -74,18 +74,41 @@ describe("StudyService", () => {
   it("훈련 시작 시도 뒤에도 챕터 학습 제출이 정상 동작한다", async () => {
     const { svc } = mk();
     await svc.open();
-    await svc.startPractice("time"); // 학습 기록이 없어 실패해도 챕터 세션이 깨지면 안 된다
+    await svc.startPractice("free"); // 학습 기록이 없어 실패해도 챕터 세션이 깨지면 안 된다
     svc.exitPractice();
     const c = svc.next()!;
     const s2 = (await content.sentences(c.patternId, ["original"])).find((x) => x.sentenceId === c.sentenceId)!;
     expect(await svc.submit(c.sentenceId, s2.en, false, 500)).toMatchObject({ kind: "graded", verdict: "PASS" });
   });
-  it("타임어택은 제한 시간이 짧아진다", async () => {
-    const { svc } = mk();
-    await svc.open(); const c = svc.next()!;
-    await svc.submit(c.sentenceId, (await content.sentences(c.patternId, ["original"])).find((x) => x.sentenceId === c.sentenceId)!.en, false, 500);
-    await svc.startPractice("time");
-    expect(svc.next()!.timeLimitSec).toBe(9); // 15초 × 0.6
+  it("자유 훈련은 아무것도 기록하지 않고 성적표를 낸다", async () => {
+    const { svc, store } = mk();
+    await svc.open();
+    expect(await svc.startPractice("free", { n: 2 })).toMatchObject({ ok: true });
+    let k = svc.next()!; expect(k.mode).toBe("free");
+    const en = (await content.sentences(k.patternId, ["original"])).find((x) => x.sentenceId === k.sentenceId)!.en;
+    await svc.submit(k.sentenceId, en, false, 1000);
+    expect(await store.attempts("u")).toHaveLength(0); // 시도 기록 없음
+    expect((await svc.notesView()).wrong).toHaveLength(0);
+    k = svc.next()!; await svc.submit(k.sentenceId, "no no", false, 3000);
+    expect(svc.next()).toBeUndefined();
+    expect(svc.practiceSummary()).toMatchObject({ answered: 2, correct: 1, firstTryPct: 50, grade: "C", avgMs: 2000 });
+  });
+  it("완료 취소는 완료 노트에서 빼고 복습 일정을 지우며 챕터로 되돌린다", async () => {
+    const { svc, store, clock } = mk();
+    await svc.open();
+    for (let c = svc.next(); c; c = svc.next()) {
+      const s = (await content.sentences(c.patternId, ["original"])).find((x) => x.sentenceId === c.sentenceId)!;
+      const r = await svc.submit(c.sentenceId, s.en, false, 1000);
+      if (r.kind === "graded" && r.chapterCompleted) break;
+    }
+    const first = (await svc.notesView()).completed[0]!;
+    expect((await store.dueReviews("u", clock.t + 86_400_000 + 1)).length).toBeGreaterThan(0);
+    const r = await svc.uncomplete(first.patternId);
+    expect(r.chapterId).toBeGreaterThan(0);
+    expect((await svc.notesView()).completed.find((c) => c.patternId === first.patternId)).toBeUndefined();
+    expect((await store.dueReviews("u", clock.t + 86_400_000 + 1))).not.toContain(first.patternId);
+    expect((await store.progress("u")).get(first.patternId)).toMatchObject({ streak: 0, state: "learning" });
+    expect((await svc.overview()).totalDone).toBeLessThan((await svc.overview()).totalPatterns);
   });
   it("필수 구문이 없어도 패턴 표현이 힌트가 된다", async () => {
     const c2: ContentRepository = { ...content, pattern: async (id) => ({ patternId: id, template: "be good at", level: "A1" }), sentences: async (p) => [{ ...sent(p, 1), mustUse: undefined }] };

@@ -24,9 +24,15 @@ createServer(async (req, res) => {
     if (!opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
     if (url.pathname === "/api/next") return json(res, 200, { card: study.next() ?? null, summary: study.practiceSummary() ?? null });
-    if (url.pathname === "/api/practice") { const k = url.searchParams.get("kind"); return json(res, 200, k === "weak" || k === "time" ? await study.startPractice(k) : { ok: false, reason: "알 수 없는 훈련" }); }
+    if (url.pathname === "/api/practice") {
+      const k = url.searchParams.get("kind"); const sid = url.searchParams.get("sentence");
+      const opts = { level: url.searchParams.get("level") ?? undefined, n: url.searchParams.get("n") ? Number(url.searchParams.get("n")) : undefined, sentenceId: sid ? Number(sid) : undefined };
+      return json(res, 200, k === "weak" || k === "free" ? await study.startPractice(k, opts) : { ok: false, reason: "알 수 없는 훈련" });
+    }
+    if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
+    if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
     if (url.pathname === "/api/practice/exit") { study.exitPractice(); return json(res, 200, { ok: true }); }
-    if (url.pathname === "/api/notes") return json(res, 200, study.notesView());
+    if (url.pathname === "/api/notes") return json(res, 200, await study.notesView());
     if (url.pathname === "/api/stats") return json(res, 200, await study.statsView());
     if (url.pathname === "/api/hint") { const b = await body(req); return json(res, 200, { hint: study.hint(b.sentenceId) ?? null }); }
     if (url.pathname === "/api/submit") { const b = await body(req); return json(res, 200, await study.submit(b.sentenceId, String(b.input ?? ""), !!b.usedHint, Number(b.elapsedMs ?? 0))); }

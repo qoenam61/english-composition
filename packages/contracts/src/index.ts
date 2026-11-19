@@ -22,7 +22,9 @@ export interface AttemptRecord { patternId: number; sentenceId: number; verdict:
 export interface UserStore {
   attempts(userId: string): Promise<AttemptRecord[]>;
   recordCompletion(userId: string, patternId: number, at: number): Promise<void>;
-  completions(userId: string): Promise<Array<{ patternId: number; at: number }>>;
+  completions(userId: string): Promise<Array<{ patternId: number; at: number; undoneAt?: number }>>;
+  markUndone(userId: string, patternId: number, at: number): Promise<void>;
+  deleteSchedule(userId: string, patternId: number): Promise<void>;
   progress(userId: string): Promise<Map<number, PatternProgress>>;
   saveProgress(userId: string, p: PatternProgress): Promise<void>;
   recordAttempt(userId: string, e: AttemptGraded): Promise<void>;

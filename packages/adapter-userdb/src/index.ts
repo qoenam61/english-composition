@@ -13,9 +13,11 @@ export class SqliteUserStore implements UserStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS user_pattern_state(user_id TEXT, pattern_id INTEGER, streak INTEGER, state TEXT, hint_only_streak INTEGER, consecutive_fails INTEGER, seen TEXT, last_seen INTEGER, PRIMARY KEY(user_id, pattern_id));
       CREATE TABLE IF NOT EXISTS attempt(attempt_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, sentence_id INTEGER, pattern_id INTEGER, input_text TEXT, verdict TEXT, used_hint INTEGER, over_time INTEGER, grader_version TEXT, at INTEGER, elapsed_ms INTEGER DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS completion(user_id TEXT, pattern_id INTEGER, at INTEGER, PRIMARY KEY(user_id, pattern_id, at));
+      CREATE TABLE IF NOT EXISTS completion(user_id TEXT, pattern_id INTEGER, at INTEGER, undone_at INTEGER, PRIMARY KEY(user_id, pattern_id, at));
       CREATE TABLE IF NOT EXISTS srs_schedule(user_id TEXT, pattern_id INTEGER, box INTEGER, due_at INTEGER, PRIMARY KEY(user_id, pattern_id));
     `);
+    const cols = (this.db.prepare("PRAGMA table_info(completion)").all() as any[]).map((c) => c.name);
+    if (!cols.includes("undone_at")) this.db.exec("ALTER TABLE completion ADD COLUMN undone_at INTEGER");
   }
 
   async progress(userId: string): Promise<Map<number, PatternProgress>> {
@@ -32,10 +34,16 @@ export class SqliteUserStore implements UserStore {
     return (this.db.prepare("SELECT * FROM attempt WHERE user_id=? ORDER BY attempt_id").all(userId) as any[]).map((r) => ({ patternId: r.pattern_id, sentenceId: r.sentence_id, verdict: r.verdict, usedHint: !!r.used_hint, overTime: !!r.over_time, elapsedMs: r.elapsed_ms ?? 0, input: r.input_text, at: r.at }));
   }
   async recordCompletion(userId: string, patternId: number, at: number): Promise<void> {
-    this.db.prepare("INSERT OR IGNORE INTO completion VALUES (?,?,?)").run(userId, patternId, at);
+    this.db.prepare("INSERT OR IGNORE INTO completion(user_id,pattern_id,at) VALUES (?,?,?)").run(userId, patternId, at);
   }
-  async completions(userId: string): Promise<Array<{ patternId: number; at: number }>> {
-    return (this.db.prepare("SELECT pattern_id, at FROM completion WHERE user_id=? ORDER BY at").all(userId) as any[]).map((r) => ({ patternId: r.pattern_id, at: r.at }));
+  async completions(userId: string): Promise<Array<{ patternId: number; at: number; undoneAt?: number }>> {
+    return (this.db.prepare("SELECT pattern_id, at, undone_at FROM completion WHERE user_id=? ORDER BY at").all(userId) as any[]).map((r) => ({ patternId: r.pattern_id, at: r.at, undoneAt: r.undone_at ?? undefined }));
+  }
+  async markUndone(userId: string, patternId: number, at: number): Promise<void> {
+    this.db.prepare("UPDATE completion SET undone_at=? WHERE user_id=? AND pattern_id=? AND undone_at IS NULL").run(at, userId, patternId);
+  }
+  async deleteSchedule(userId: string, patternId: number): Promise<void> {
+    this.db.prepare("DELETE FROM srs_schedule WHERE user_id=? AND pattern_id=?").run(userId, patternId);
   }
   async dueReviews(userId: string, now: number): Promise<number[]> {
     return (this.db.prepare("SELECT pattern_id FROM srs_schedule WHERE user_id=? AND due_at<=? ORDER BY due_at").all(userId, now) as any[]).map((r) => r.pattern_id);
