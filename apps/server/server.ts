@@ -5,14 +5,40 @@ import { fileURLToPath } from "node:url";
 import { SqliteContentRepository } from "@app/adapter-content";
 import { SqliteUserStore } from "@app/adapter-userdb";
 import { GradingService } from "@app/grading";
-import { ClaudeCliJudge } from "@app/adapter-llm";
+import { ChainJudge, ClaudeCliJudge, OpenAiCompatJudge } from "@app/adapter-llm";
+import type { LlmJudge } from "@app/contracts";
 import { StudyService } from "@app/app";
 
 // 조립 지점(composition root): 어떤 어댑터를 쓸지는 여기서만 정한다.
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const content = new SqliteContentRepository(process.env.PACK ?? root + "dist/pack-personal.sqlite");
 const store = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
-const study = new StudyService({ userId: "me", content, store, grading: new GradingService(process.env.JUDGE === "off" ? undefined : new ClaudeCliJudge({ model: process.env.JUDGE_MODEL ?? "sonnet" })), rng: Math.random, now: Date.now, tracks: ["original", "own"] });
+// 판정기 설정(환경변수). JUDGE_CHAIN=앞에서부터 시도할 판정기 목록, 기본 "claude"(haiku). 예: JUDGE_CHAIN=openai,claude
+//   claude: JUDGE_MODEL(기본 haiku) / openai(OpenAI 호환: Groq·Gemini 호환·OpenRouter·Ollama 등): JUDGE_BASE_URL, JUDGE_API_KEY, JUDGE_API_MODEL / JUDGE=off 면 LLM 판정 없음
+function buildJudge(): LlmJudge | undefined {
+  if (process.env.JUDGE === "off") return undefined;
+  const list: LlmJudge[] = [];
+  for (const name of (process.env.JUDGE_CHAIN ?? "claude").split(",").map((x) => x.trim()).filter(Boolean)) {
+    if (name === "claude") list.push(new ClaudeCliJudge({ model: process.env.JUDGE_MODEL ?? "haiku" }));
+    else if (name === "openai" && process.env.JUDGE_BASE_URL && process.env.JUDGE_API_MODEL) list.push(new OpenAiCompatJudge({ baseUrl: process.env.JUDGE_BASE_URL, apiKey: process.env.JUDGE_API_KEY, model: process.env.JUDGE_API_MODEL }));
+  }
+  return list.length === 0 ? undefined : list.length === 1 ? list[0] : new ChainJudge(list);
+}
+// 음성 설정: TTS_PROVIDER=browser(기본, 브라우저 내장) | server(OpenAI 호환 TTS 서버, 예: 로컬 Kokoro). server 일 때 TTS_URL, TTS_VOICE, TTS_MODEL.
+const ttsProvider = process.env.TTS_PROVIDER === "server" ? "server" : "browser";
+const ttsCache = new Map<string, Buffer>();
+async function ttsAudio(text: string): Promise<Buffer> {
+  const hit = ttsCache.get(text); if (hit) return hit;
+  const r = await fetch((process.env.TTS_URL ?? "http://127.0.0.1:8880/v1").replace(/\/$/, "") + "/audio/speech", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model: process.env.TTS_MODEL ?? "kokoro", voice: process.env.TTS_VOICE ?? "af_heart", input: text, response_format: "mp3" }), signal: AbortSignal.timeout(15_000),
+  });
+  if (!r.ok) throw new Error(`음성 서버 오류 (${r.status})`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (ttsCache.size >= 300) ttsCache.delete(ttsCache.keys().next().value!);
+  ttsCache.set(text, buf); return buf;
+}
+const study = new StudyService({ userId: "me", content, store, grading: new GradingService(buildJudge()), rng: Math.random, now: Date.now, tracks: ["original", "own"] });
 const uiDir = root + "apps/ui/dist"; // React 빌드 결과가 있으면 그것을, 없으면 예전 단일 페이지를 쓴다
 const legacyPage = readFileSync(root + "apps/web/index.html", "utf8");
 const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png" };
@@ -41,6 +67,12 @@ createServer(async (req, res) => {
       const k = url.searchParams.get("kind"); const sid = url.searchParams.get("sentence");
       const opts = { level: url.searchParams.get("level") ?? undefined, n: url.searchParams.get("n") ? Number(url.searchParams.get("n")) : undefined, sentenceId: sid ? Number(sid) : undefined };
       return json(res, 200, k === "weak" || k === "free" ? await study.startPractice(k, opts) : { ok: false, reason: "알 수 없는 훈련" });
+    }
+    if (url.pathname === "/api/config") return json(res, 200, { tts: ttsProvider });
+    if (url.pathname === "/api/tts") {
+      const text = (url.searchParams.get("text") ?? "").trim();
+      if (ttsProvider !== "server" || !text || text.length > 300) return json(res, 400, { error: "음성 서버를 쓸 수 없어요" });
+      const audio = await ttsAudio(text); res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "public, max-age=86400" }); return res.end(audio);
     }
     if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }

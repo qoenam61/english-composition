@@ -176,7 +176,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--chapters", default="")
-    ap.add_argument("--model", default="sonnet")
+    ap.add_argument("--model", default="haiku")
     ap.add_argument("--batch", type=int, default=25)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--apply", action="store_true")

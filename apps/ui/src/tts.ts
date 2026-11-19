@@ -1,19 +1,33 @@
 /** 음성 안내(TTS). 브라우저 speechSynthesis 를 쓰며, 어떤 경우에도 Promise 가 반드시 끝나도록(종료·오류·취소·시간 초과) 안전장치를 둔다. */
 const KEY = "epa.tts";
-export const ttsSupported = () => typeof window !== "undefined" && "speechSynthesis" in window;
+let provider: "browser" | "server" = "browser"; // 서버 설정(/api/config)이 정한다. server 면 서버의 TTS 엔진(예: 로컬 Kokoro) 음성을 쓴다.
+export async function initTts(): Promise<void> { try { const c = (await (await fetch("/api/config")).json()) as { tts?: string }; provider = c.tts === "server" ? "server" : "browser"; } catch { /* 설정을 못 읽으면 브라우저 음성 */ } }
+const browserOk = () => typeof window !== "undefined" && "speechSynthesis" in window;
+export const ttsSupported = () => browserOk() || provider === "server";
 export function ttsEnabled(): boolean { try { return localStorage.getItem(KEY) === "on"; } catch { return false; } }
 export function setTtsEnabled(on: boolean): void { try { localStorage.setItem(KEY, on ? "on" : "off"); } catch { /* 저장 불가여도 동작은 한다 */ } if (!on) cancelSpeech(); }
 
 let epoch = 0; // 올라가면 진행 중인 재생 대기열은 모두 무효
-export function cancelSpeech(): void { epoch++; if (ttsSupported()) window.speechSynthesis.cancel(); }
+const finishers = new Set<() => void>(); let audio: HTMLAudioElement | null = null;
+export function cancelSpeech(): void {
+  epoch++; if (browserOk()) window.speechSynthesis.cancel();
+  if (audio) { audio.pause(); audio = null; }
+  [...finishers].forEach((f) => f()); // 기다리던 재생을 즉시 끝낸 것으로 풀어 준다(타이머가 멈춰 있지 않게)
+}
 
 /** 한 문장을 읽고 끝나면 resolve. 오류·취소·자동재생 차단으로 종료 이벤트가 안 와도 시간 초과 시 resolve 한다. */
 export function speak(text: string): Promise<void> {
   if (!ttsSupported() || !text.trim()) return Promise.resolve();
   return new Promise((resolve) => {
-    let done = false; const finish = () => { if (!done) { done = true; clearTimeout(timer); resolve(); } };
+    let done = false; const finish = () => { if (!done) { done = true; clearTimeout(timer); finishers.delete(finish); resolve(); } };
+    finishers.add(finish);
     const words = text.trim().split(/\s+/).length;
     const timer = setTimeout(finish, 3500 + words * 700); // 안전장치: 이 시간이 지나면 끝난 것으로 본다
+    const browserSpeak = () => { if (!browserOk()) return finish(); try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; u.onend = finish; u.onerror = finish; window.speechSynthesis.speak(u); } catch { finish(); } };
+    if (provider === "server") { // 서버 음성: 재생 실패(자동재생 차단·서버 오류)면 브라우저 음성으로 대신한다
+      try { const a = new Audio("/api/tts?text=" + encodeURIComponent(text)); audio = a; a.onended = finish; a.onerror = browserSpeak; void a.play().catch(browserSpeak); } catch { browserSpeak(); }
+      return;
+    }
     try {
       const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95;
       u.onend = finish; u.onerror = finish;
@@ -24,8 +38,7 @@ export function speak(text: string): Promise<void> {
 
 /** 순차 재생: 문자열은 읽고, 숫자는 그만큼(ms) 쉰다. 도중에 cancelSpeech() 가 불리면 즉시 멈춘다. */
 export async function speakSequence(items: Array<string | number>): Promise<void> {
-  const mine = ++epoch;
-  if (ttsSupported()) window.speechSynthesis.cancel();
+  cancelSpeech(); const mine = epoch; // 이전 재생을 정리하고 새 대기열을 시작한다
   for (const it of items) {
     if (mine !== epoch) return;
     if (typeof it === "number") await new Promise((r) => setTimeout(r, it)); else await speak(it);
