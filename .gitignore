@@ -1,0 +1,6 @@
+private/
+*.db
+*.sqlite
+.env
+node_modules/
+__pycache__/
