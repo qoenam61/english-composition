@@ -23,7 +23,9 @@ createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(page); }
     if (!opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
-    if (url.pathname === "/api/next") return json(res, 200, { card: study.next() ?? null });
+    if (url.pathname === "/api/next") return json(res, 200, { card: study.next() ?? null, summary: study.practiceSummary() ?? null });
+    if (url.pathname === "/api/practice") { const k = url.searchParams.get("kind"); return json(res, 200, k === "weak" || k === "time" ? await study.startPractice(k) : { ok: false, reason: "알 수 없는 훈련" }); }
+    if (url.pathname === "/api/practice/exit") { study.exitPractice(); return json(res, 200, { ok: true }); }
     if (url.pathname === "/api/notes") return json(res, 200, study.notesView());
     if (url.pathname === "/api/stats") return json(res, 200, await study.statsView());
     if (url.pathname === "/api/hint") { const b = await body(req); return json(res, 200, { hint: study.hint(b.sentenceId) ?? null }); }

@@ -52,6 +52,41 @@ describe("StudyService", () => {
     expect(again.notesView().wrong).toHaveLength(1);
     expect((await again.statsView()).today.attempts).toBe(1);
   });
+  it("자유 훈련(취약 패턴): 오답 패턴만 출제하고 진도는 바꾸지 않으며 요약을 낸다", async () => {
+    const { svc, store } = mk();
+    expect(await svc.startPractice("weak")).toMatchObject({ ok: false }); // 빈 상태에서 시도해도
+    await svc.open(); const c = svc.next()!;
+    await svc.submit(c.sentenceId, "totally different words", false, 1000); // 오답노트 등록
+    const before = (await store.progress("u")).get(c.patternId);
+    const st = await svc.startPractice("weak");
+    expect(st).toEqual({ ok: true, total: 2 }); // 패턴 1개, 문장 2개
+    let n = 0;
+    for (let k = svc.next(); k; k = svc.next(), n++) {
+      expect(k.mode).toBe("weak"); expect(k.patternId).toBe(c.patternId);
+      const s2 = (await content.sentences(k.patternId, ["original"])).find((x) => x.sentenceId === k.sentenceId)!;
+      const r = await svc.submit(k.sentenceId, n === 0 ? s2.en : "wrong wrong", false, 2000);
+      expect(r).toMatchObject({ kind: "graded" });
+    }
+    expect(n).toBe(2);
+    expect(svc.practiceSummary()).toMatchObject({ total: 2, correct: 1, missedPatternIds: [c.patternId] });
+    expect((await store.progress("u")).get(c.patternId)).toEqual(before); // 진도 불변
+  });
+  it("훈련 시작 시도 뒤에도 챕터 학습 제출이 정상 동작한다", async () => {
+    const { svc } = mk();
+    await svc.open();
+    await svc.startPractice("time"); // 학습 기록이 없어 실패해도 챕터 세션이 깨지면 안 된다
+    svc.exitPractice();
+    const c = svc.next()!;
+    const s2 = (await content.sentences(c.patternId, ["original"])).find((x) => x.sentenceId === c.sentenceId)!;
+    expect(await svc.submit(c.sentenceId, s2.en, false, 500)).toMatchObject({ kind: "graded", verdict: "PASS" });
+  });
+  it("타임어택은 제한 시간이 짧아진다", async () => {
+    const { svc } = mk();
+    await svc.open(); const c = svc.next()!;
+    await svc.submit(c.sentenceId, (await content.sentences(c.patternId, ["original"])).find((x) => x.sentenceId === c.sentenceId)!.en, false, 500);
+    await svc.startPractice("time");
+    expect(svc.next()!.timeLimitSec).toBe(9); // 15초 × 0.6
+  });
   it("제한 시간은 문장 길이로 정한다", () => {
     expect([timeLimitSec("a b c"), timeLimitSec("a b c d e f g h"), timeLimitSec("a b c d e f g h i j k l m")]).toEqual([15, 20, 30]);
   });
