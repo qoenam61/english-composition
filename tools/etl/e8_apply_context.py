@@ -2,7 +2,7 @@
 
 실행: python3 -I tools/etl/e8_apply_context.py data/context_ch1.json
 형식: {"<sentence_id>": {"context": "A: ...", "variants": ["..."]}}
-- 질문 제시문은 "(상황)" 형태, 평서문은 "A: 유도 질문" 형태의 영어 앞 대사.
+- 질문 제시문은 "(상황)" 형태, 평서문은 "Q: 상대 앞 대사" 형태의 영어 앞 대사.
 - 변형 정답은 kind='variant_authored' 로 넣고, 다시 실행하면 같은 kind 행을 지우고 다시 넣는다(멱등).
 - 입력 JSON 은 원본에서 파생된 변형 정답을 담으므로 data/(git 제외)에 둔다.
 """
