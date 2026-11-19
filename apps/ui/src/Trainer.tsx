@@ -88,7 +88,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
     pending.current = null; setWaiting(false); setSpeaking(true);
     void speak(p.q).then(() => { if (p.id === loadId.current) setSpeaking(false); p.start(); });
   };
-  const replay = () => { const q = speakable(card?.context); if (!q) return; cancelSpeech(); setSpeaking(true); void speak(q).then(() => setSpeaking(false)); };
+  const replay = () => { const q = speakable(card?.context); if (!q) return; cancelSpeech(); setSpeaking(true); const t0 = Date.now(); void speak(q).then(() => { setSpeaking(false); if (Date.now() - t0 < 400) toast("음성이 재생되지 않았어요. 무음 모드·미디어 볼륨·브라우저의 영어 음성 설치를 확인해 주세요", "warn"); }); };
   const toggleTts = () => { const on = !tts; setTts(on); setTtsEnabled(on); if (!on) { setSpeaking(false); if (pending.current) { const p = pending.current; pending.current = null; setWaiting(false); p.start(); } } } // OFF 면 재생 중 음성 중단, 대기 중이던 카운트다운은 즉시 시작; // OFF 면 재생 중인 음성도 즉시 중단
   const endNow = async () => { const r = await api.next(); setCard(null); setSummary(r.summary); };
 

@@ -32,7 +32,16 @@ function buildJudge(): LlmJudge | undefined {
 // 음성 설정: TTS_CHAIN=앞에서부터 시도할 엔진, 기본 "kokoro,browser" = 1순위 로컬 Kokoro(OpenAI 호환 서버), 실패 시 브라우저 음성.
 //   kokoro 서버: TTS_URL(기본 http://127.0.0.1:8880/v1), TTS_VOICE, TTS_MODEL. TTS_CHAIN=browser 면 브라우저 음성만. (옛 TTS_PROVIDER=server|browser 도 인식)
 const ttsChain = (process.env.TTS_CHAIN ?? (process.env.TTS_PROVIDER === "browser" ? "browser" : "kokoro,browser")).split(",").map((x) => x.trim());
-const ttsProvider = ttsChain[0] === "kokoro" ? "server" : "browser";
+const ttsWantsServer = ttsChain[0] === "kokoro";
+let ttsProbe = { at: 0, up: false };
+/** Kokoro 서버가 실제로 살아 있을 때만 서버 음성을 쓴다(꺼져 있으면 브라우저 음성으로 바로 가서, 모바일에서 사용자 동작 밖의 대체 재생이 막히는 일을 피한다). 30초 캐시. */
+async function ttsServerUp(): Promise<boolean> {
+  if (!ttsWantsServer) return false;
+  if (Date.now() - ttsProbe.at < 30_000) return ttsProbe.up;
+  let up = false;
+  try { up = (await fetch((process.env.TTS_URL ?? "http://127.0.0.1:8880/v1").replace(/\/$/, "") + "/models", { signal: AbortSignal.timeout(1500) })).ok; } catch { up = false; }
+  ttsProbe = { at: Date.now(), up }; return up;
+}
 const ttsCache = new Map<string, Buffer>();
 async function ttsAudio(text: string): Promise<Buffer> {
   const hit = ttsCache.get(text); if (hit) return hit;
@@ -75,10 +84,10 @@ createServer(async (req, res) => {
       const opts = { level: url.searchParams.get("level") ?? undefined, n: url.searchParams.get("n") ? Number(url.searchParams.get("n")) : undefined, sentenceId: sid ? Number(sid) : undefined };
       return json(res, 200, k === "weak" || k === "free" ? await study.startPractice(k, opts) : { ok: false, reason: "알 수 없는 훈련" });
     }
-    if (url.pathname === "/api/config") return json(res, 200, { tts: ttsProvider });
+    if (url.pathname === "/api/config") return json(res, 200, { tts: (await ttsServerUp()) ? "server" : "browser" });
     if (url.pathname === "/api/tts") {
       const text = (url.searchParams.get("text") ?? "").trim();
-      if (ttsProvider !== "server" || !text || text.length > 300) return json(res, 400, { error: "음성 서버를 쓸 수 없어요" });
+      if (!(await ttsServerUp()) || !text || text.length > 300) return json(res, 400, { error: "음성 서버를 쓸 수 없어요" });
       const audio = await ttsAudio(text); res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "public, max-age=86400" }); return res.end(audio);
     }
     if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
