@@ -71,7 +71,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
       if (r.kind === "error") { toast(r.message, "warn"); return; }
       if (r.verdict === "MINOR_TYPO") { toast("오타 같아요. 다시 입력해 보세요 (기록되지 않아요)", "info"); ta.current?.focus(); return; }
       setRes({ ...r, input: input.trim() });
-      if (ttsRef.current) { const q = speakable(card.context); void speakSequence([...(q ? [q, 650] : []), r.answer]); } // 질문 → 간격 → 모범 정답
+      if (ttsRef.current) { const q = speakable(card.context); void speakSequence([...(q ? [{ text: q, role: "q" as const }, 650] : []), { text: r.answer, role: "a" as const }]); } // 질문 → 간격 → 모범 정답
       if (r.patternCompleted) { toast("🎉 패턴 완료! 학습완료 노트로 이동했어요", "ok"); onChanged(); }
       if (r.chapterCompleted) toast("🏆 챕터 완료!", "ok");
     } catch (e) { toast(e instanceof Error ? e.message : "제출 실패", "warn"); }

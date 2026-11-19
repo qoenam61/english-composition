@@ -43,7 +43,8 @@
 ```
 TTS_CHAIN=kokoro,browser    # 기본
 TTS_URL=http://127.0.0.1:8880/v1   # OpenAI 호환 TTS 서버(예: Kokoro-FastAPI)
-TTS_VOICE=af_heart
+TTS_VOICE_Q=af_heart        # 질문 목소리
+TTS_VOICE_A=am_adam         # 답변 목소리(질문과 다르게)
 TTS_MODEL=kokoro
 ```
 서버 음성이 실패(엔진 없음·자동재생 차단)하면 자동으로 브라우저 음성으로 대신하고, 그래도 안 되면 타이머가 시간 초과 안전장치로 시작된다.

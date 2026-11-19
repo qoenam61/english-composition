@@ -43,16 +43,19 @@ async function ttsServerUp(): Promise<boolean> {
   ttsProbe = { at: Date.now(), up }; return up;
 }
 const ttsCache = new Map<string, Buffer>();
-async function ttsAudio(text: string): Promise<Buffer> {
-  const hit = ttsCache.get(text); if (hit) return hit;
+// 질문(q)과 답변(a)은 다른 음성으로 읽는다: TTS_VOICE_Q(기본 af_heart, 구 TTS_VOICE 도 인식) / TTS_VOICE_A(기본 am_adam)
+async function ttsAudio(text: string, role: string): Promise<Buffer> {
+  const voice = role === "a" ? process.env.TTS_VOICE_A ?? "am_adam" : process.env.TTS_VOICE_Q ?? process.env.TTS_VOICE ?? "af_heart";
+  const key = voice + "|" + text;
+  const hit = ttsCache.get(key); if (hit) return hit;
   const r = await fetch((process.env.TTS_URL ?? "http://127.0.0.1:8880/v1").replace(/\/$/, "") + "/audio/speech", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model: process.env.TTS_MODEL ?? "kokoro", voice: process.env.TTS_VOICE ?? "af_heart", input: text, response_format: "mp3" }), signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({ model: process.env.TTS_MODEL ?? "kokoro", voice, input: text, response_format: "mp3" }), signal: AbortSignal.timeout(15_000),
   });
   if (!r.ok) throw new Error(`음성 서버 오류 (${r.status})`);
   const buf = Buffer.from(await r.arrayBuffer());
   if (ttsCache.size >= 300) ttsCache.delete(ttsCache.keys().next().value!);
-  ttsCache.set(text, buf); return buf;
+  ttsCache.set(key, buf); return buf;
 }
 const study = new StudyService({ userId: "me", content, store, grading: new GradingService(buildJudge()), rng: Math.random, now: Date.now, tracks: ["original", "own"] });
 const uiDir = root + "apps/ui/dist"; // React 빌드 결과가 있으면 그것을, 없으면 예전 단일 페이지를 쓴다
@@ -88,7 +91,7 @@ createServer(async (req, res) => {
     if (url.pathname === "/api/tts") {
       const text = (url.searchParams.get("text") ?? "").trim();
       if (!(await ttsServerUp()) || !text || text.length > 300) return json(res, 400, { error: "음성 서버를 쓸 수 없어요" });
-      const audio = await ttsAudio(text); res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "public, max-age=86400" }); return res.end(audio);
+      const audio = await ttsAudio(text, url.searchParams.get("role") === "a" ? "a" : "q"); res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "public, max-age=86400" }); return res.end(audio);
     }
     if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
