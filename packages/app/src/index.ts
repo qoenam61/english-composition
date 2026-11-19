@@ -125,7 +125,7 @@ export class StudyService {
     this.current = { sentenceId: q.sentenceId, patternId: q.patternId, review: false };
     const s = this.sentences.get(q.sentenceId)!;
     const base = timeLimitSec(s.en);
-    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: false, hintAvailable: !!s.mustUse, timeLimitSec: p.kind === "time" ? Math.max(8, Math.round(base * 0.6)) : base, patternNo: p.idx + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: p.kind === "weak" ? "취약 패턴" : "타임어택", board: this.practiceBoard(), chapterId: 0, mode: p.kind };
+    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: false, hintAvailable: !!(s.mustUse || this.templates.get(s.patternId)), timeLimitSec: p.kind === "time" ? Math.max(8, Math.round(base * 0.6)) : base, patternNo: p.idx + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: p.kind === "weak" ? "취약 패턴" : "타임어택", board: this.practiceBoard(), chapterId: 0, mode: p.kind };
   }
 
   private async submitPractice(sentenceId: number, input: string, usedHint: boolean, elapsedMs: number): Promise<SubmitView> {
@@ -146,10 +146,11 @@ export class StudyService {
     if (!this.session || !this.chapter) throw new Error("open() 먼저");
     const p = this.session.next(); if (!p) { this.current = undefined; return undefined; }
     this.current = p; const s = this.sentences.get(p.sentenceId)!;
-    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: p.review, hintAvailable: !!s.mustUse, timeLimitSec: timeLimitSec(s.en), patternNo: this.chapter.patternIds.indexOf(s.patternId) + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: this.chapter.level, board: this.session.board(), chapterId: this.chapter.chapterId, mode: "chapter" };
+    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: p.review, hintAvailable: !!(s.mustUse || this.templates.get(s.patternId)), timeLimitSec: timeLimitSec(s.en), patternNo: this.chapter.patternIds.indexOf(s.patternId) + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: this.chapter.level, board: this.session.board(), chapterId: this.chapter.chapterId, mode: "chapter" };
   }
 
-  hint(sentenceId: number): string | undefined { return this.sentences.get(sentenceId)?.mustUse; }
+  /** 힌트 = 필수 구문, 없으면 패턴 표현. 평소에는 화면에 패턴 표현을 보이지 않는다. */
+  hint(sentenceId: number): string | undefined { const s = this.sentences.get(sentenceId); return s?.mustUse || this.templates.get(s?.patternId ?? -1) || undefined; }
 
   notesView() { return { wrong: sortedWrong(this.notes), completed: [...this.notes.completed.values()] }; }
 

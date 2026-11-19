@@ -232,7 +232,7 @@ function render(){
   limit=card.timeLimitSec;
   $("progLabel").textContent=card.mode==="chapter"?`${card.level} · 챕터 ${card.chapterId}`:`${card.level} · ${card.patternNo}/${card.board.total}`;
   $("main").innerHTML=`
-    <div class="pattern"><div class="chip ${card.review?"review":""}">${card.review?"복습 · ":""}${card.mode==="chapter"?"PATTERN "+String(card.patternNo).padStart(2,"0"):"문제 "+card.patternNo}${card.patternTemplate?` <span>${esc(card.patternTemplate)}</span>`:""}</div></div>
+    <div class="pattern"><div class="chip ${card.review?"review":""}">${card.review?"복습 · ":""}${card.mode==="chapter"?"PATTERN "+String(card.patternNo).padStart(2,"0"):"문제 "+card.patternNo}</div></div>
     <div class="chat">${ctxHtml(card.context)}<div class="thought"><div class="tl">내가 하고 싶은 말</div><h1 class="ko">${esc(card.ko)}</h1></div></div>
     <div>
       <div class="myrow"><div class="inbox" id="inbox">
@@ -260,7 +260,7 @@ function primary(){ state==="shown"?next():submit(); }
 function toggleHint(){
   if(!card||!card.hintAvailable||state==="shown") return; const p=$("pop");
   if(!p.hidden){ p.hidden=true; $("in").focus(); return; }
-  api("/api/hint",{sentenceId:card.sentenceId}).then(h=>{ hinted=true; p.innerHTML=`<small>이 구문을 꼭 사용하세요 (힌트를 쓰면 완료 횟수에 안 들어가요)</small><code>${esc(h.hint||"")}</code>`; p.hidden=false; $("in").focus(); });
+  api("/api/hint",{sentenceId:card.sentenceId}).then(h=>{ hinted=true; p.innerHTML=`<small>이 표현을 써 보세요 (힌트를 쓰면 완료 횟수에 안 들어가요)</small><code>${esc(h.hint||"")}</code>`; p.hidden=false; $("in").focus(); });
 }
 
 /* 단어 단위 비교(LCS) */

@@ -87,6 +87,13 @@ describe("StudyService", () => {
     await svc.startPractice("time");
     expect(svc.next()!.timeLimitSec).toBe(9); // 15초 × 0.6
   });
+  it("필수 구문이 없어도 패턴 표현이 힌트가 된다", async () => {
+    const c2: ContentRepository = { ...content, pattern: async (id) => ({ patternId: id, template: "be good at", level: "A1" }), sentences: async (p) => [{ ...sent(p, 1), mustUse: undefined }] };
+    const svc = new StudyService({ userId: "h", content: c2, store: new SqliteUserStore(), grading: new GradingService(), rng: lcg(3), now: () => 0, tracks: ["original"] });
+    await svc.open(); const card = svc.next()!;
+    expect(card.hintAvailable).toBe(true);
+    expect(svc.hint(card.sentenceId)).toBe("be good at");
+  });
   it("제한 시간은 문장 길이로 정한다", () => {
     expect([timeLimitSec("a b c"), timeLimitSec("a b c d e f g h"), timeLimitSec("a b c d e f g h i j k l m")]).toEqual([15, 20, 30]);
   });
