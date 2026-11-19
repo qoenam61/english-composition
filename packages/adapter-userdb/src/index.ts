@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import type { DatabaseSync as DB } from "node:sqlite";
-import type { AttemptGraded, UserStore } from "@app/contracts";
+import type { AttemptGraded, AttemptRecord, UserStore } from "@app/contracts";
 import type { PatternProgress } from "@app/domain";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
@@ -12,7 +12,8 @@ export class SqliteUserStore implements UserStore {
     this.db = new DatabaseSync(path);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS user_pattern_state(user_id TEXT, pattern_id INTEGER, streak INTEGER, state TEXT, hint_only_streak INTEGER, consecutive_fails INTEGER, seen TEXT, last_seen INTEGER, PRIMARY KEY(user_id, pattern_id));
-      CREATE TABLE IF NOT EXISTS attempt(attempt_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, sentence_id INTEGER, pattern_id INTEGER, input_text TEXT, verdict TEXT, used_hint INTEGER, over_time INTEGER, grader_version TEXT, at INTEGER);
+      CREATE TABLE IF NOT EXISTS attempt(attempt_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, sentence_id INTEGER, pattern_id INTEGER, input_text TEXT, verdict TEXT, used_hint INTEGER, over_time INTEGER, grader_version TEXT, at INTEGER, elapsed_ms INTEGER DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS completion(user_id TEXT, pattern_id INTEGER, at INTEGER, PRIMARY KEY(user_id, pattern_id, at));
       CREATE TABLE IF NOT EXISTS srs_schedule(user_id TEXT, pattern_id INTEGER, box INTEGER, due_at INTEGER, PRIMARY KEY(user_id, pattern_id));
     `);
   }
@@ -25,7 +26,16 @@ export class SqliteUserStore implements UserStore {
     this.db.prepare("INSERT OR REPLACE INTO user_pattern_state VALUES (?,?,?,?,?,?,?,?)").run(userId, p.patternId, p.streak, p.state, p.hintOnlyStreak, p.consecutiveFails, JSON.stringify(p.seenSentenceIds), p.lastSeenAt ?? null);
   }
   async recordAttempt(userId: string, e: AttemptGraded): Promise<void> {
-    this.db.prepare("INSERT INTO attempt(user_id,sentence_id,pattern_id,input_text,verdict,used_hint,over_time,grader_version,at) VALUES (?,?,?,?,?,?,?,?,?)").run(userId, e.sentenceId, e.patternId, e.input, e.verdict, e.usedHint ? 1 : 0, e.overTime ? 1 : 0, e.graderVersion, Date.now());
+    this.db.prepare("INSERT INTO attempt(user_id,sentence_id,pattern_id,input_text,verdict,used_hint,over_time,grader_version,at,elapsed_ms) VALUES (?,?,?,?,?,?,?,?,?,?)").run(userId, e.sentenceId, e.patternId, e.input, e.verdict, e.usedHint ? 1 : 0, e.overTime ? 1 : 0, e.graderVersion, Date.now(), e.elapsedMs ?? 0);
+  }
+  async attempts(userId: string): Promise<AttemptRecord[]> {
+    return (this.db.prepare("SELECT * FROM attempt WHERE user_id=? ORDER BY attempt_id").all(userId) as any[]).map((r) => ({ patternId: r.pattern_id, sentenceId: r.sentence_id, verdict: r.verdict, usedHint: !!r.used_hint, overTime: !!r.over_time, elapsedMs: r.elapsed_ms ?? 0, input: r.input_text, at: r.at }));
+  }
+  async recordCompletion(userId: string, patternId: number, at: number): Promise<void> {
+    this.db.prepare("INSERT OR IGNORE INTO completion VALUES (?,?,?)").run(userId, patternId, at);
+  }
+  async completions(userId: string): Promise<Array<{ patternId: number; at: number }>> {
+    return (this.db.prepare("SELECT pattern_id, at FROM completion WHERE user_id=? ORDER BY at").all(userId) as any[]).map((r) => ({ patternId: r.pattern_id, at: r.at }));
   }
   async dueReviews(userId: string, now: number): Promise<number[]> {
     return (this.db.prepare("SELECT pattern_id FROM srs_schedule WHERE user_id=? AND due_at<=? ORDER BY due_at").all(userId, now) as any[]).map((r) => r.pattern_id);

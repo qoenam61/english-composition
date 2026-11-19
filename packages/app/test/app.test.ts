@@ -44,6 +44,14 @@ describe("StudyService", () => {
     expect((await e.submit(cc.sentenceId, "totally different words", false, 0)).kind).toBe("error");
     expect(e.notesView().wrong).toHaveLength(0);
   });
+  it("재접속해도 오답노트가 복원되고 통계가 쌓인다", async () => {
+    const { svc, store, clock } = mk();
+    await svc.open(); const c = svc.next()!;
+    await svc.submit(c.sentenceId, "totally different words", false, 3000);
+    const again = mk(store, clock).svc; await again.open();
+    expect(again.notesView().wrong).toHaveLength(1);
+    expect((await again.statsView()).today.attempts).toBe(1);
+  });
   it("제한 시간은 문장 길이로 정한다", () => {
     expect([timeLimitSec("a b c"), timeLimitSec("a b c d e f g h"), timeLimitSec("a b c d e f g h i j k l m")]).toEqual([15, 20, 30]);
   });

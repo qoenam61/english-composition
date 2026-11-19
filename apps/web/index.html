@@ -15,6 +15,8 @@ button{padding:10px 16px;margin-top:10px;margin-right:8px;border-radius:8px;bord
 .bar{display:flex;justify-content:space-between;color:var(--mut);font-size:14px}
 </style></head><body><main>
 <div class="bar"><strong>패턴 영작</strong><span id="remain"></span></div>
+<nav><button onclick="tab('study')">학습</button><button onclick="tab('wrong')">오답노트</button><button onclick="tab('done')">학습완료노트</button><button onclick="tab('stats')">대시보드</button></nav>
+<div id="panel" style="display:none"></div>
 <div class="badges" id="badges" aria-label="챕터 패턴 달성 배지"></div>
 <div id="stage"></div>
 <p class="ctx" id="msg"></p>
@@ -41,6 +43,13 @@ async function submit(){
   if(r.verdict==="MINOR_TYPO"){ $("msg").textContent="거의 맞았어요 — 오타를 고쳐 다시 입력하세요."; const i=$("in"); i.select(); t0=Date.now(); return; }
   $("msg").textContent=(r.verdict==="PASS"?"정답! ":"오답. ")+"정답: "+r.answer+(r.patternCompleted?"  ✔ 패턴 완료":"");
   setTimeout(next, r.verdict==="PASS"?900:2200);
+}
+function tab(t){
+  const st=$("stage"),pn=$("panel"); if(t==="study"){ pn.style.display="none"; st.style.display=""; if(!card) next(); return; }
+  st.style.display="none"; pn.style.display=""; pn.innerHTML="불러오는 중…";
+  if(t==="stats") return api("/api/stats").then(s=>{ pn.innerHTML=`<div class="card"><b>연속 학습일 ${s.streakDays}일</b><br>오늘 ${s.today.attempts}문제 · 패턴 ${s.today.patternsCompleted}개 완료 · 첫 시도 정답률 ${Math.round(s.today.firstTryCorrectRate*100)}% · 평균 ${(s.today.avgElapsedMs/1000).toFixed(1)}초<br>누적 ${s.totalAttempts}문제 · 완료 패턴 ${s.totalCompleted}개</div><div class="card">${s.days.slice(-14).map(d=>`<div class="ctx">${d.date} · ${d.attempts}문제 · 완료 ${d.patternsCompleted}</div>`).join("")||"기록 없음"}</div>`; });
+  api("/api/notes").then(n=>{ const list=t==="wrong"?n.wrong:n.completed;
+    pn.innerHTML=`<div class="card">${t==="wrong"?"오답노트 (틀린 횟수 많은 순)":"학습완료노트"} — ${list.length}개</div>`+list.map(x=>t==="wrong"?`<div class="card">패턴 #${x.patternId} · ${x.wrongCount}회 오답<div class="ctx">마지막 입력: ${x.lastWrongInput.replace(/</g,"&lt;")}</div></div>`:`<div class="card">패턴 #${x.patternId} 완료</div>`).join(""); });
 }
 next();
 </script></body></html>

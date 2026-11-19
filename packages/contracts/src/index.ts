@@ -2,7 +2,7 @@ import type { PatternProgress, Verdict } from "@app/domain";
 
 // ---- 이벤트 (버전 있는 스키마) ----
 export interface AnswerSubmitted { v: 1; type: "AnswerSubmitted"; sentenceId: number; patternId: number; input: string; usedHint: boolean; elapsedMs: number; overTime: boolean }
-export interface AttemptGraded { v: 1; type: "AttemptGraded"; sentenceId: number; patternId: number; verdict: Verdict; usedHint: boolean; overTime: boolean; input: string; graderVersion: string }
+export interface AttemptGraded { v: 1; type: "AttemptGraded"; sentenceId: number; patternId: number; verdict: Verdict; usedHint: boolean; overTime: boolean; input: string; graderVersion: string; elapsedMs?: number }
 export interface PatternCompleted { v: 1; type: "PatternCompleted"; patternId: number; chapterId: number }
 export interface ChapterCompleted { v: 1; type: "ChapterCompleted"; chapterId: number }
 export interface ReviewDue { v: 1; type: "ReviewDue"; patternId: number }
@@ -18,7 +18,11 @@ export interface ContentRepository {
   pattern(id: number): Promise<PatternRef | undefined>;
   sentences(patternId: number, enabledTracks: ReadonlyArray<"original" | "own">): Promise<SentenceRef[]>;
 }
+export interface AttemptRecord { patternId: number; sentenceId: number; verdict: Verdict; usedHint: boolean; overTime: boolean; elapsedMs: number; input: string; at: number }
 export interface UserStore {
+  attempts(userId: string): Promise<AttemptRecord[]>;
+  recordCompletion(userId: string, patternId: number, at: number): Promise<void>;
+  completions(userId: string): Promise<Array<{ patternId: number; at: number }>>;
   progress(userId: string): Promise<Map<number, PatternProgress>>;
   saveProgress(userId: string, p: PatternProgress): Promise<void>;
   recordAttempt(userId: string, e: AttemptGraded): Promise<void>;

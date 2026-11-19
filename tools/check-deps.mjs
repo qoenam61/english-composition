@@ -1,7 +1,7 @@
 // 의존 규칙 린트: domain 은 아무것도 import 하지 않고, contracts 는 @app/domain 만 import 한다.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-const ALLOWED = { domain: [], contracts: ["@app/domain"], session: ["@app/domain", "@app/contracts"], grading: ["@app/domain", "@app/contracts"], "adapter-content": ["@app/contracts", "node:sqlite", "node:module"], notes: ["@app/contracts"], app: ["@app/contracts", "@app/domain", "@app/grading", "@app/session", "@app/notes"], "adapter-userdb": ["@app/contracts", "@app/domain", "node:sqlite", "node:module"] };
+const ALLOWED = { domain: [], contracts: ["@app/domain"], session: ["@app/domain", "@app/contracts"], grading: ["@app/domain", "@app/contracts"], "adapter-content": ["@app/contracts", "node:sqlite", "node:module"], notes: ["@app/contracts"], app: ["@app/contracts", "@app/domain", "@app/grading", "@app/session", "@app/notes", "@app/stats"], stats: ["@app/contracts"], "adapter-userdb": ["@app/contracts", "@app/domain", "node:sqlite", "node:module"] };
 let bad = 0;
 function walk(d) { return readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : []; }); }
 for (const [pkg, allow] of Object.entries(ALLOWED)) {

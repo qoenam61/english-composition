@@ -25,6 +25,7 @@ createServer(async (req, res) => {
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
     if (url.pathname === "/api/next") return json(res, 200, { card: study.next() ?? null });
     if (url.pathname === "/api/notes") return json(res, 200, study.notesView());
+    if (url.pathname === "/api/stats") return json(res, 200, await study.statsView());
     if (url.pathname === "/api/hint") { const b = await body(req); return json(res, 200, { hint: study.hint(b.sentenceId) ?? null }); }
     if (url.pathname === "/api/submit") { const b = await body(req); return json(res, 200, await study.submit(b.sentenceId, String(b.input ?? ""), !!b.usedHint, Number(b.elapsedMs ?? 0))); }
     json(res, 404, { error: "not found" });
