@@ -3,160 +3,323 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <title>패턴 영작</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
-/* 레이아웃: 한 장의 문제 카드를 가운데에 두고, 위에는 챕터 진행(칸 막대), 아래는 결과. 노트·대시보드는 같은 폭의 목록 */
+/* 레이아웃: 집중 모드 — 상단은 메뉴·진행 막대·스트릭뿐, 중앙에 패턴 뱃지 → 한국어 → 큰 입력창 → 3단 비교 카드. 노트·대시보드는 시트로 접어 둔다 */
 :root{
-  --bg:#f3f5f8; --surface:#ffffff; --ink:#15202b; --mute:#5f6b7a; --line:#d5dbe3;
-  --accent:#2b4fd8; --accent-ink:#ffffff; --accent-soft:#e6ebfc;
-  --ok:#1f8a4c; --ok-soft:#e3f4ea; --warn:#a06a00; --warn-soft:#fbf0d4; --bad:#c23636; --bad-soft:#fbe6e6;
-  --serif:"Noto Serif KR",Georgia,serif; --sans:"Noto Sans KR",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --bg:#0f172a; --surface:#1e293b; --surface-2:#273449; --ink:#e6ebf3; --mute:#94a3b8; --faint:#64748b;
+  --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.18);
+  --accent:#34d399; --accent-soft:rgba(52,211,153,.14); --accent-ink:#052e22;
+  --indigo:#818cf8; --indigo-soft:rgba(129,140,248,.16);
+  --bad:#f87171; --bad-soft:rgba(248,113,113,.16); --warn:#fbbf24; --warn-soft:rgba(251,191,36,.14);
+  --ko:"Pretendard Variable",Pretendard,"Noto Sans KR",system-ui,sans-serif;
+  --en:"Plus Jakarta Sans","Pretendard Variable",Inter,system-ui,sans-serif;
+  color-scheme:dark;
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#11161d; --surface:#1a222c; --ink:#e8edf3; --mute:#94a0ae; --line:#2e3946;
-  --accent:#7c97ff; --accent-ink:#0d1220; --accent-soft:#222c4d;
-  --ok:#5fcf8e; --ok-soft:#173326; --warn:#e8b94a; --warn-soft:#38300f; --bad:#ff8585; --bad-soft:#3b1d1d; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#11161d; --surface:#1a222c; --ink:#e8edf3; --mute:#94a0ae; --line:#2e3946;
-  --accent:#7c97ff; --accent-ink:#0d1220; --accent-soft:#222c4d;
-  --ok:#5fcf8e; --ok-soft:#173326; --warn:#e8b94a; --warn-soft:#38300f; --bad:#ff8585; --bad-soft:#3b1d1d; color-scheme:dark}
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font:400 16px/1.6 var(--sans);padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.wrap{max-width:680px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
-h1{font:700 18px/1.2 var(--sans);margin:0;letter-spacing:-.01em}
-.where{color:var(--mute);font-size:14px;font-variant-numeric:tabular-nums}
-.where b{color:var(--ink);font-weight:700}
-.track{display:flex;gap:3px;flex-wrap:wrap}
-.seg{flex:1 0 14px;max-width:22px;height:8px;border-radius:2px;background:var(--line)}
-.seg.on{background:var(--ok)}
-nav{display:flex;gap:4px;border-bottom:1px solid var(--line)}
-nav button{font:500 14px var(--sans);background:none;border:0;border-bottom:2px solid transparent;color:var(--mute);padding:10px 12px;margin-bottom:-1px;cursor:pointer}
-nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
-nav button:hover{color:var(--ink)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:24px}
-.tag{display:inline-block;font:500 12px var(--sans);letter-spacing:.04em;color:var(--mute);margin-bottom:6px}
-.ctx{color:var(--mute);font-size:14px;margin:0 0 4px}
-.ko{font:700 clamp(22px,5vw,28px)/1.45 var(--serif);margin:0 0 20px;text-wrap:balance}
-.field{display:flex;flex-direction:column;gap:10px}
-input[type=text]{width:100%;font:500 18px var(--mono);padding:14px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px}
-input[type=text]:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.btn{font:500 14px var(--sans);padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
-.btn:hover{border-color:var(--accent)}
-.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.kbd{font:500 12px var(--mono);color:var(--mute)}
-.hint{font:500 15px var(--mono);color:var(--accent);min-height:1.5em}
-.result{margin-top:16px;border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
-.result.PASS{background:var(--ok-soft)}.result.MINOR_TYPO{background:var(--warn-soft)}.result.FAIL{background:var(--bad-soft)}
-.pill{align-self:flex-start;font:700 12px var(--sans);letter-spacing:.04em;padding:2px 8px;border-radius:99px;border:1px solid currentColor}
-.PASS .pill{color:var(--ok)}.MINOR_TYPO .pill{color:var(--warn)}.FAIL .pill{color:var(--bad)}
-.answer{font:500 16px var(--mono);overflow-wrap:anywhere}
-.done-msg{font-weight:700}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
-.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
-.stat .n{font:700 26px/1.2 var(--sans);font-variant-numeric:tabular-nums}
-.stat .l{color:var(--mute);font-size:13px}
-.bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin-top:8px}
-.bar{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;height:100%}
-.bar i{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px}
-.bar span{font-size:11px;color:var(--mute);font-variant-numeric:tabular-nums}
-.list{display:flex;flex-direction:column;gap:8px}
-.item{display:flex;justify-content:space-between;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
-.item small{display:block;color:var(--mute);font:400 13px var(--mono);overflow-wrap:anywhere}
-.count{font:700 13px var(--sans);color:var(--bad);white-space:nowrap}
-.empty{color:var(--mute);text-align:center;padding:32px 0}
-h2{font:700 15px var(--sans);margin:0 0 4px}
-@media (prefers-reduced-motion:no-preference){.result{animation:in .15s ease-out}@keyframes in{from{opacity:0;transform:translateY(4px)}}}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.6 var(--ko);-webkit-font-smoothing:antialiased;
+  padding-block:0 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button{font-family:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
+.shell{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:linear-gradient(var(--bg) 70%,transparent);padding-block:16px 8px;display:flex;align-items:center;gap:14px}
+.icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none;transition:border-color .15s,background .15s}
+.icon-btn:hover{border-color:var(--line-strong);background:var(--surface-2)}
+.prog{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.prog-top{display:flex;justify-content:space-between;font:500 12px var(--en);color:var(--mute);font-variant-numeric:tabular-nums}
+.prog-top b{color:var(--ink);font-weight:600}
+.bar{height:10px;border-radius:99px;background:var(--surface);border:1px solid var(--line);overflow:hidden}
+.bar>i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#10b981,var(--accent));transition:width .7s cubic-bezier(.34,1.3,.5,1)}
+.streak{flex:none;display:flex;align-items:center;gap:6px;height:38px;padding:0 12px;border-radius:99px;background:var(--surface);border:1px solid var(--line);font:600 13px var(--en);color:var(--mute);font-variant-numeric:tabular-nums;transition:color .2s,border-color .2s,background .2s}
+.streak.hot{color:var(--accent);border-color:rgba(52,211,153,.4);background:var(--accent-soft)}
+.streak.pop{animation:pop .35s cubic-bezier(.34,1.56,.64,1)}
+@keyframes pop{from{transform:scale(.85)}to{transform:scale(1)}}
+
+.stage{display:flex;flex-direction:column;gap:22px}
+.pattern{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:99px;background:var(--indigo-soft);color:var(--indigo);font:600 12px var(--en);letter-spacing:.06em;max-width:100%}
+.chip span{letter-spacing:0;font-weight:500;color:var(--ink);overflow-wrap:anywhere}
+.chip.review{background:var(--warn-soft);color:var(--warn)}
+.ctx{margin:0 0 6px;color:var(--mute);font-size:14px}
+.ko{margin:0;font:700 clamp(24px,5.4vw,32px)/1.4 var(--ko);letter-spacing:-.02em;text-wrap:balance;word-break:keep-all}
+
+.inbox{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:border-color .15s,box-shadow .15s}
+.inbox:focus-within{border-color:rgba(129,140,248,.6);box-shadow:0 0 0 4px var(--indigo-soft)}
+.inbox.locked{border-color:var(--line);box-shadow:none}
+.inrow{display:flex;align-items:center;gap:12px;padding:6px 16px 6px 20px}
+.inrow input{flex:1;min-width:0;height:68px;background:none;border:0;outline:0;color:var(--ink);font:500 clamp(18px,4.2vw,22px) var(--en)}
+.inrow input::placeholder{color:var(--faint)}
+.count{font:500 12px var(--en);color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+.key{display:inline-grid;place-items:center;min-width:34px;height:28px;padding:0 8px;border-radius:7px;border:1px solid var(--line-strong);border-bottom-width:3px;background:var(--surface-2);font:600 13px var(--en);color:var(--mute)}
+.gauge{height:4px;background:rgba(255,255,255,.05)}
+.gauge>i{display:block;height:100%;width:100%;transform-origin:left;background:var(--accent);transition:background .4s}
+.gauge.mid>i{background:var(--warn)}
+.gauge.over>i{background:var(--indigo)}
+.timelabel{display:flex;justify-content:space-between;font:500 12px var(--en);color:var(--faint);padding:0 4px;margin-top:8px;font-variant-numeric:tabular-nums}
+
+.hintbox{position:relative}
+.pop{position:absolute;left:0;bottom:calc(100% + 10px);z-index:4;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:12px;padding:12px 14px;width:max-content;max-width:min(340px,86vw);box-shadow:0 12px 32px rgba(0,0,0,.35)}
+.pop small{display:block;color:var(--mute);font-size:12px;margin-bottom:4px}
+.pop code{font:600 16px var(--en);color:var(--accent)}
+
+.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line-strong);background:transparent;font:600 14px var(--ko);cursor:pointer;transition:background .15s,transform .1s}
+.btn:hover:not(:disabled){background:var(--surface)}
+.btn:active:not(:disabled){transform:scale(.98)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover:not(:disabled){background:#6ee7b7}
+.btn .key{height:22px;min-width:26px;font-size:11px;border-bottom-width:2px}
+.btn.primary .key{background:rgba(5,46,34,.15);border-color:rgba(5,46,34,.3);color:var(--accent-ink)}
+.spacer{flex:1}
+.shortcuts{font:500 12px var(--en);color:var(--faint)}
+
+.result{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .45s cubic-bezier(.34,1.2,.5,1),opacity .3s}
+.result.open{grid-template-rows:1fr;opacity:1}
+.result>div{overflow:hidden;min-height:0}
+.cmp{background:var(--surface);border:1px solid var(--line);border-radius:16px}
+.cmp-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.verdict{font:700 12px var(--en);letter-spacing:.06em;padding:3px 10px;border-radius:99px}
+.verdict.PASS{background:var(--accent-soft);color:var(--accent)}
+.verdict.FAIL{background:var(--bad-soft);color:var(--bad)}
+.done-chip{font:600 12px var(--ko);color:var(--indigo)}
+.toggle{margin-left:auto;display:flex;align-items:center;gap:8px;font:500 12px var(--ko);color:var(--mute);background:none;border:0;cursor:pointer;padding:4px}
+.sw{width:34px;height:20px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line-strong);position:relative;transition:background .2s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--mute);transition:transform .25s cubic-bezier(.34,1.56,.64,1),background .2s}
+.toggle[aria-pressed="true"] .sw{background:var(--accent-soft);border-color:rgba(52,211,153,.5)}
+.toggle[aria-pressed="true"] .sw::after{transform:translateX(14px);background:var(--accent)}
+.row3{display:grid;grid-template-columns:76px 1fr;gap:4px 14px;padding:14px 18px;border-top:1px solid var(--line)}
+.cmp-head+.row3{border-top:0}
+.lab{font:600 11px var(--en);letter-spacing:.08em;color:var(--faint);padding-top:6px}
+.txt{font:500 18px/1.7 var(--en);overflow-wrap:anywhere;min-width:0}
+.txt.k{font-family:var(--ko);color:var(--mute)}
+.w{padding:1px 4px;border-radius:5px}
+.diff .bad{background:var(--bad-soft);color:var(--bad);text-decoration:line-through;text-decoration-thickness:1.5px}
+.diff .good{background:var(--accent-soft);color:var(--accent)}
+.notice{padding:12px 16px;border-radius:12px;background:var(--warn-soft);color:var(--warn);font-size:14px}
+.err{padding:12px 16px;border-radius:12px;background:var(--bad-soft);color:var(--bad);font-size:14px}
+
+.scrim{position:fixed;inset:0;background:rgba(2,6,23,.6);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
+.scrim.open{opacity:1;pointer-events:auto}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--bg);border-left:1px solid var(--line);z-index:21;transform:translateX(100%);visibility:hidden;transition:transform .35s cubic-bezier(.32,.72,0,1),visibility 0s .35s;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.sheet.open{transform:none;visibility:visible;transition:transform .35s cubic-bezier(.32,.72,0,1)}
+.sheet-top{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 8px 20px}
+.sheet-top h2{margin:0;font:700 17px var(--ko)}
+.tabs{display:flex;gap:6px;padding:4px 16px 12px 20px;flex-wrap:wrap}
+.tab{height:34px;padding:0 14px;border-radius:99px;border:1px solid var(--line);background:none;font:500 13px var(--ko);color:var(--mute);cursor:pointer}
+.tab[aria-selected="true"]{background:var(--indigo-soft);border-color:rgba(129,140,248,.5);color:var(--ink)}
+.sheet-body{flex:1;overflow-y:auto;padding:4px 20px 28px;display:flex;flex-direction:column;gap:10px}
+.sheet-body h3{margin:0;font:700 15px var(--ko)}
+.sheet-body .sub{margin:0;color:var(--mute);font-size:13px}
+.item{display:flex;justify-content:space-between;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.item>div{min-width:0}
+.item small{display:block;color:var(--mute);font:400 13px var(--en);overflow-wrap:anywhere}
+.item .n{font:700 13px var(--en);color:var(--bad);white-space:nowrap}
+.item .d{font:500 12px var(--en);color:var(--mute);white-space:nowrap}
+.empty{color:var(--mute);text-align:center;padding:36px 0;margin:0}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.stat .v{font:700 24px/1.2 var(--en);font-variant-numeric:tabular-nums}
+.stat .l{color:var(--mute);font-size:12px}
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
+.bars{display:flex;align-items:flex-end;gap:5px;height:110px;margin-top:10px}
+.bars div{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;font:500 10px var(--en);color:var(--faint)}
+.bars i{display:block;width:100%;background:var(--indigo);border-radius:3px 3px 0 0;min-height:2px}
+
+.finish{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:32px 24px;text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center}
+.finish h2{margin:0;font:700 22px var(--ko)}
+.finish p{margin:0;color:var(--mute)}
+@media (max-width:480px){.row3{grid-template-columns:1fr}.lab{padding-top:0}.shortcuts{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="shell">
   <header>
-    <h1>패턴 영작</h1>
-    <div class="where" id="where"></div>
+    <button class="icon-btn" id="menuBtn" aria-label="메뉴 열기 (Esc)" title="메뉴 (Esc)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <div class="prog" aria-label="챕터 진행">
+      <div class="prog-top"><span id="progLabel">챕터</span><span id="progNum"><b>0</b> / 0</span></div>
+      <div class="bar"><i id="progFill"></i></div>
+    </div>
+    <div class="streak" id="streak" title="연속 정답"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg><span id="streakN">0</span></div>
   </header>
-  <div class="track" id="track" role="img" aria-label="챕터 패턴 달성 현황"></div>
-  <nav role="tablist" id="tabs">
-    <button role="tab" data-t="study" aria-selected="true">학습</button>
-    <button role="tab" data-t="wrong" aria-selected="false">오답노트</button>
-    <button role="tab" data-t="done" aria-selected="false">학습완료노트</button>
-    <button role="tab" data-t="stats" aria-selected="false">대시보드</button>
-  </nav>
-  <main id="main"></main>
+  <main class="stage" id="main" aria-live="polite"></main>
 </div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" aria-hidden="true" aria-label="기록">
+  <div class="sheet-top"><h2>기록</h2>
+    <button class="icon-btn" id="sheetClose" aria-label="닫고 학습으로 돌아가기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <div class="tabs" role="tablist" id="tabs">
+    <button class="tab" role="tab" data-t="wrong" aria-selected="true">오답노트</button>
+    <button class="tab" role="tab" data-t="done" aria-selected="false">학습완료노트</button>
+    <button class="tab" role="tab" data-t="stats" aria-selected="false">대시보드</button>
+  </div>
+  <div class="sheet-body" id="sheetBody"></div>
+</aside>
+
 <script>
 const $=(i)=>document.getElementById(i);
 const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const api=(p,b)=>fetch(p,b?{method:"POST",body:JSON.stringify(b)}:{}).then(r=>r.json());
-let card=null,t0=0,hinted=false,busy=false,state="input",timer=null,tab="study";
+let card=null,hinted=false,busy=false,state="input",diffOn=true,streak=0,last=null,t0=0,limit=15,raf=0,curTab="wrong";
 
+/* 헤더 */
 function board(b){
-  $("where").innerHTML=`남은 <b>${b.remaining}</b>개 · 전체 ${b.total}개`;
-  $("track").innerHTML=b.badges.map(x=>`<span class="seg${x?" on":""}"></span>`).join("");
+  const done=b.total-b.remaining;
+  $("progNum").innerHTML=`<b>${done}</b> / ${b.total}`;
+  $("progFill").style.width=(b.total?done/b.total*100:0)+"%";
 }
-function show(t){
-  tab=t; document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));
-  if(t==="study") return card?renderCard():next();
-  if(t==="stats") return stats(); notes(t);
+function setStreak(n,pop){
+  streak=n; $("streakN").textContent=n; const s=$("streak"); s.classList.toggle("hot",n>=3);
+  if(pop){ s.classList.remove("pop"); void s.offsetWidth; s.classList.add("pop"); }
 }
-document.getElementById("tabs").addEventListener("click",e=>{const b=e.target.closest("button"); if(b) show(b.dataset.t)});
 
+/* 타이머 게이지: 시간 초과는 강제 종료 없이 색만 바뀐다 */
+function startTimer(){
+  cancelAnimationFrame(raf); t0=Date.now(); const g=$("gauge"),tl=$("tl"); if(!g) return;
+  const tick=()=>{
+    const el=(Date.now()-t0)/1000, left=Math.max(0,limit-el), r=left/limit;
+    g.firstElementChild.style.transform=`scaleX(${r})`;
+    g.className="gauge"+(el>limit?" over":r<.3?" mid":"");
+    tl.lastElementChild.textContent=el>limit?`+${Math.floor(el-limit)}초 · 시간 기록만 남아요`:`${Math.ceil(left)}초`;
+    raf=requestAnimationFrame(tick);
+  }; tick();
+}
+const stopTimer=()=>cancelAnimationFrame(raf);
+
+/* 문제 */
 async function next(){
-  clearTimeout(timer); const {card:c}=await api("/api/next"); card=c; hinted=false; state="input";
-  if(!c){ $("main").innerHTML=`<div class="card"><p class="done-msg">이 챕터의 패턴을 모두 완료했어요.</p><p class="ctx">완료한 패턴은 복습일에만 다시 나옵니다.</p><button class="btn primary" id="nc">다음 챕터 열기</button></div>`; $("nc").onclick=()=>api("/api/open").then(()=>next()); return; }
-  board(c.board); renderCard();
+  const {card:c}=await api("/api/next"); card=c; hinted=false; state="input"; last=null;
+  if(!c){ stopTimer(); $("main").innerHTML=`<div class="finish"><h2>이 챕터를 모두 완료했어요</h2><p>완료한 패턴은 복습일에만 다시 나옵니다.</p><button class="btn primary" id="nc">다음 챕터 열기 <span class="key">Enter</span></button></div>`; $("nc").onclick=openNext; return; }
+  board(c.board); render();
 }
-function renderCard(){
-  if(!card) return next();
-  $("main").innerHTML=`<div class="card">
-    ${card.review?'<span class="tag">복습</span>':''}
-    ${card.context?`<p class="ctx">${esc(card.context)}</p>`:''}
-    <p class="ko">${esc(card.ko)}</p>
-    <div class="field">
-      <input id="in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="영어로 입력" aria-label="영어 답안">
-      <div class="row">
-        ${card.hintAvailable?'<button class="btn" id="hb" type="button">힌트</button>':''}
-        <button class="btn primary" id="sb" type="button">제출</button>
-        <span class="kbd">Enter</span><span class="kbd" style="margin-left:auto">${card.timeLimitSec}초 기준</span>
+async function openNext(){ await api("/api/open"); next(); }
+function render(){
+  limit=card.timeLimitSec;
+  $("progLabel").textContent=`${card.level} · 챕터 ${card.chapterId}`;
+  $("main").innerHTML=`
+    <div class="pattern"><div class="chip ${card.review?"review":""}">${card.review?"복습 · ":""}PATTERN ${String(card.patternNo).padStart(2,"0")}${card.patternTemplate?` <span>${esc(card.patternTemplate)}</span>`:""}</div></div>
+    <div>${card.context?`<p class="ctx">${esc(card.context)}</p>`:""}<h1 class="ko">${esc(card.ko)}</h1></div>
+    <div>
+      <div class="inbox" id="inbox">
+        <div class="inrow">
+          <input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="영어로 입력하세요" aria-label="영어 답안">
+          <span class="count" id="cnt">0 단어</span><span class="key" id="enterKey" aria-hidden="true">↵</span>
+        </div>
+        <div class="gauge" id="gauge"><i></i></div>
       </div>
-      <div class="hint" id="hint"></div>
+      <div class="timelabel" id="tl"><span>${limit}초 기준</span><span></span></div>
     </div>
-    <div id="res" aria-live="polite"></div></div>`;
-  const i=$("in"); i.focus(); t0=Date.now();
-  i.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); state==="shown"?next():submit(); }});
-  $("sb").onclick=()=>state==="shown"?next():submit();
-  const hb=$("hb"); if(hb) hb.onclick=async()=>{ const h=await api("/api/hint",{sentenceId:card.sentenceId}); hinted=true; $("hint").textContent="필수 구문: "+(h.hint||""); i.focus(); };
+    <div class="actions">
+      <div class="hintbox"><button class="btn" id="hb" type="button" ${card.hintAvailable?"":"disabled"}>힌트 <span class="key">Ctrl /</span></button><div class="pop" id="pop" hidden></div></div>
+      <span class="spacer"></span>
+      <span class="shortcuts">Enter 제출 · Esc 메뉴</span>
+      <button class="btn primary" id="sb" type="button"><span id="sbl">제출하기</span> <span class="key">Enter</span></button>
+    </div>
+    <div class="result" id="result"><div id="resultIn"></div></div>`;
+  const i=$("in"); i.focus();
+  i.addEventListener("input",()=>{ const t=i.value.trim(); $("cnt").textContent=(t?t.split(/\s+/).length:0)+" 단어"; });
+  $("sb").onclick=primary; $("hb").onclick=toggleHint;
+  startTimer();
 }
+function primary(){ state==="shown"?next():submit(); }
+function toggleHint(){
+  if(!card||!card.hintAvailable||state==="shown") return; const p=$("pop");
+  if(!p.hidden){ p.hidden=true; $("in").focus(); return; }
+  api("/api/hint",{sentenceId:card.sentenceId}).then(h=>{ hinted=true; p.innerHTML=`<small>이 구문을 꼭 사용하세요 (힌트를 쓰면 완료 횟수에 안 들어가요)</small><code>${esc(h.hint||"")}</code>`; p.hidden=false; $("in").focus(); });
+}
+
+/* 단어 단위 비교(LCS) */
+const nw=(w)=>w.toLowerCase().replace(/[^a-z0-9']/g,"");
+function diff(user,ans){
+  const a=user.trim().split(/\s+/).filter(Boolean), b=ans.trim().split(/\s+/).filter(Boolean);
+  const A=a.map(nw), B=b.map(nw), n=a.length, m=b.length;
+  const L=Array.from({length:n+1},()=>new Array(m+1).fill(0));
+  for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)L[i][j]=A[i]===B[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
+  const ua=new Array(n).fill(false), ba=new Array(m).fill(false);
+  let i=0,j=0; while(i<n&&j<m){ if(A[i]===B[j]){ua[i]=ba[j]=true;i++;j++;} else if(L[i+1][j]>=L[i][j+1]) i++; else j++; }
+  A.forEach((x,k)=>{ if(!x) ua[k]=true; }); B.forEach((x,k)=>{ if(!x) ba[k]=true; });
+  return {a,b,ua,ba};
+}
+const paint=(words,ok,cls)=>words.map((w,k)=>ok[k]?esc(w):`<span class="w ${cls}">${esc(w)}</span>`).join(" ");
+
+function renderResult(r,user,animate){
+  const d=diff(user,r.answer);
+  $("resultIn").innerHTML=`<div class="cmp">
+    <div class="cmp-head"><span class="verdict ${r.verdict}">${r.verdict==="PASS"?"정답":"오답"}</span>${r.patternCompleted?'<span class="done-chip">✓ 패턴 완료</span>':""}
+      <button class="toggle" id="dt" aria-pressed="${diffOn}" type="button"><span>Diff 비교 ${diffOn?"끄기":"켜기"} (D)</span><span class="sw"></span></button></div>
+    <div class="row3"><div class="lab">한국어</div><div class="txt k">${esc(card.ko)}</div></div>
+    <div class="row3"><div class="lab">내 입력</div><div class="txt diff">${diffOn?paint(d.a,d.ua,"bad"):esc(user)}</div></div>
+    <div class="row3"><div class="lab">모범 정답</div><div class="txt diff">${diffOn?paint(d.b,d.ba,"good"):esc(r.answer)}</div></div></div>`;
+  if(animate) requestAnimationFrame(()=>requestAnimationFrame(()=>$("result").classList.add("open")));
+  $("dt").onclick=toggleDiff; last={r,user};
+}
+function toggleDiff(){ if(last){ diffOn=!diffOn; renderResult(last.r,last.user,false); } }
+
 async function submit(){
-  if(busy||!card) return; const i=$("in"); if(!i.value.trim()) return; busy=true;
-  const r=await api("/api/submit",{sentenceId:card.sentenceId,input:i.value,usedHint:hinted,elapsedMs:Date.now()-t0}); busy=false;
-  if(r.kind==="error"){ $("res").innerHTML=`<div class="result FAIL"><span class="pill">채점 오류</span><span>${esc(r.message)}</span></div>`; return; }
-  board(r.board); const lab={PASS:"정답",MINOR_TYPO:"오타",FAIL:"오답"}[r.verdict];
-  if(r.verdict==="MINOR_TYPO"){ $("res").innerHTML=`<div class="result MINOR_TYPO"><span class="pill">${lab}</span><span>거의 맞았어요. 고쳐서 다시 입력하세요.</span></div>`; i.select(); t0=Date.now(); return; }
-  state="shown"; i.readOnly=true;
-  $("res").innerHTML=`<div class="result ${r.verdict}"><span class="pill">${lab}${r.patternCompleted?" · 패턴 완료":""}</span><span class="answer">${esc(r.answer)}</span><span class="kbd">Enter로 다음 문제</span></div>`;
-  if(r.verdict==="PASS") timer=setTimeout(()=>{ if(tab==="study") next(); },1100);
+  if(busy||!card||state==="shown") return; const i=$("in"), val=i.value; if(!val.trim()) return; busy=true;
+  const elapsed=Date.now()-t0; stopTimer();
+  const r=await api("/api/submit",{sentenceId:card.sentenceId,input:val,usedHint:hinted,elapsedMs:elapsed}); busy=false;
+  $("pop").hidden=true;
+  if(r.kind==="error"){ $("resultIn").innerHTML=`<div class="err">${esc(r.message)}</div>`; $("result").classList.add("open"); startTimer(); return; }
+  board(r.board);
+  if(r.verdict==="MINOR_TYPO"){ $("resultIn").innerHTML=`<div class="notice">거의 맞았어요. 철자를 고쳐 다시 입력하세요. 연속 정답은 유지돼요.</div>`; $("result").classList.add("open"); i.select(); startTimer(); return; }
+  state="shown"; i.readOnly=true; i.blur(); $("inbox").classList.add("locked"); $("sbl").textContent="다음 문제"; $("hb").disabled=true; $("enterKey").style.opacity=".4";
+  setStreak(r.verdict==="PASS"?streak+1:0, r.verdict==="PASS");
+  $("result").classList.remove("open"); renderResult(r,val,true);
 }
-async function notes(t){
-  $("main").innerHTML='<p class="empty">불러오는 중…</p>'; const n=await api("/api/notes"); const list=t==="wrong"?n.wrong:n.completed;
-  const title=t==="wrong"?"오답노트":"학습완료노트", sub=t==="wrong"?"틀린 횟수가 많은 순서":"연속 2회 정답으로 완료한 패턴";
-  $("main").innerHTML=`<h2>${title} · ${list.length}개</h2><p class="ctx">${sub}</p><div class="list">`+
-    (list.length?list.map(x=>t==="wrong"?`<div class="item"><div>패턴 #${x.patternId}<small>마지막 입력: ${esc(x.lastWrongInput)}</small></div><span class="count">${x.wrongCount}회</span></div>`:`<div class="item"><div>패턴 #${x.patternId}</div><span class="ctx">${new Date(x.completedAt).toLocaleDateString("ko-KR")}</span></div>`).join(""):`<p class="empty">${t==="wrong"?"틀린 문제가 없어요.":"아직 완료한 패턴이 없어요."}</p>`)+"</div>";
+
+/* 키보드: 마우스 없이 연속 학습 */
+document.addEventListener("keydown",e=>{
+  if(sheetOpen()){ if(e.key==="Escape") closeSheet(); return; }
+  if(e.key==="Escape"){ openSheet(); return; }
+  if(e.ctrlKey&&e.key==="/"){ e.preventDefault(); toggleHint(); return; }
+  if(e.key==="Enter"&&!e.repeat){
+    if(e.target&&e.target.closest&&e.target.closest("button")&&e.target.id!=="sb"&&e.target.id!=="nc") return;
+    const nc=$("nc"); if(nc){ e.preventDefault(); nc.click(); return; }
+    if(card){ e.preventDefault(); primary(); }
+    return;
+  }
+  if(state==="shown"&&(e.key==="d"||e.key==="D")){ e.preventDefault(); toggleDiff(); }
+});
+
+/* 시트: 노트·대시보드 */
+const sheetOpen=()=>$("sheet").classList.contains("open");
+function openSheet(){ $("sheet").classList.add("open"); $("scrim").classList.add("open"); $("sheet").setAttribute("aria-hidden","false"); stopTimer(); sheetTab(curTab); $("sheetClose").focus(); }
+function closeSheet(){
+  $("sheet").classList.remove("open"); $("scrim").classList.remove("open"); $("sheet").setAttribute("aria-hidden","true");
+  if(card&&state==="input"){ const i=$("in"); if(i) i.focus(); startTimer(); }
 }
-async function stats(){
-  $("main").innerHTML='<p class="empty">불러오는 중…</p>'; const s=await api("/api/stats"); const d=s.days.slice(-14); const max=Math.max(1,...d.map(x=>x.attempts));
-  $("main").innerHTML=`<div class="stats">
-    <div class="stat"><div class="n">${s.streakDays}일</div><div class="l">연속 학습</div></div>
-    <div class="stat"><div class="n">${s.today.attempts}</div><div class="l">오늘 푼 문제</div></div>
-    <div class="stat"><div class="n">${Math.round(s.today.firstTryCorrectRate*100)}%</div><div class="l">오늘 첫 시도 정답률</div></div>
-    <div class="stat"><div class="n">${(s.today.avgElapsedMs/1000).toFixed(1)}초</div><div class="l">오늘 평균 반응</div></div>
-    <div class="stat"><div class="n">${s.totalCompleted}</div><div class="l">누적 완료 패턴</div></div></div>
-    <div class="card" style="margin-top:12px"><h2>최근 14일 푼 문제 수</h2>${d.length?`<div class="bars">${d.map(x=>`<div class="bar" title="${x.date}"><span>${x.attempts}</span><i style="height:${Math.max(2,x.attempts/max*80)}%"></i><span>${x.date.slice(8)}</span></div>`).join("")}</div>`:'<p class="empty">아직 기록이 없어요.</p>'}</div>`;
+$("menuBtn").onclick=openSheet; $("sheetClose").onclick=closeSheet; $("scrim").onclick=closeSheet;
+$("tabs").addEventListener("click",e=>{ const b=e.target.closest(".tab"); if(b) sheetTab(b.dataset.t); });
+async function sheetTab(t){
+  curTab=t; document.querySelectorAll("#tabs .tab").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));
+  const body=$("sheetBody"); body.innerHTML='<p class="empty">불러오는 중…</p>';
+  if(t==="stats"){
+    const s=await api("/api/stats"), d=s.days.slice(-14), max=Math.max(1,...d.map(x=>x.attempts));
+    body.innerHTML=`<div class="stats">
+      <div class="stat"><div class="v">${s.streakDays}일</div><div class="l">연속 학습</div></div>
+      <div class="stat"><div class="v">${s.today.attempts}</div><div class="l">오늘 푼 문제</div></div>
+      <div class="stat"><div class="v">${Math.round(s.today.firstTryCorrectRate*100)}%</div><div class="l">오늘 첫 시도 정답률</div></div>
+      <div class="stat"><div class="v">${(s.today.avgElapsedMs/1000).toFixed(1)}초</div><div class="l">오늘 평균 반응</div></div>
+      <div class="stat"><div class="v">${s.totalCompleted}</div><div class="l">누적 완료 패턴</div></div>
+      <div class="stat"><div class="v">${s.totalAttempts}</div><div class="l">누적 문제</div></div></div>
+      <div class="chart"><h3>최근 14일 푼 문제 수</h3>${d.length?`<div class="bars">${d.map(x=>`<div title="${x.date}"><span>${x.attempts}</span><i style="height:${Math.max(2,x.attempts/max*70)}%"></i><span>${x.date.slice(8)}</span></div>`).join("")}</div>`:'<p class="empty">아직 기록이 없어요.</p>'}</div>`;
+    return;
+  }
+  const n=await api("/api/notes"), list=t==="wrong"?n.wrong:n.completed;
+  body.innerHTML=`<h3>${t==="wrong"?"오답노트":"학습완료노트"} · ${list.length}개</h3><p class="sub">${t==="wrong"?"틀린 횟수가 많은 순서":"연속 2회 정답으로 완료한 패턴"}</p>`+
+    (list.length?list.map(x=>t==="wrong"?`<div class="item"><div>패턴 #${x.patternId}<small>마지막 입력: ${esc(x.lastWrongInput)}</small></div><span class="n">${x.wrongCount}회</span></div>`:`<div class="item"><div>패턴 #${x.patternId}</div><span class="d">${new Date(x.completedAt).toLocaleDateString("ko-KR")}</span></div>`).join(""):`<p class="empty">${t==="wrong"?"틀린 문제가 없어요.":"아직 완료한 패턴이 없어요."}</p>`);
 }
 next();
 </script>

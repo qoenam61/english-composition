@@ -7,7 +7,7 @@ import { nextDue, type ChapterBoard, type PatternProgress } from "@app/domain";
 
 export interface CardView {
   sentenceId: number; patternId: number; ko: string; context?: string; review: boolean;
-  hintAvailable: boolean; timeLimitSec: number; board: ChapterBoard; chapterId: number;
+  hintAvailable: boolean; timeLimitSec: number; patternNo: number; patternTemplate: string; level: string; board: ChapterBoard; chapterId: number;
 }
 export type SubmitView =
   | { kind: "graded"; verdict: "PASS" | "MINOR_TYPO" | "FAIL"; answer: string; patternCompleted: boolean; chapterCompleted: boolean; board: ChapterBoard }
@@ -31,6 +31,7 @@ export class StudyService {
   private chapter?: ChapterRef;
   private sentences = new Map<number, SentenceRef>();
   private progress = new Map<number, PatternProgress>();
+  private templates = new Map<number, string>();
   private current?: { sentenceId: number; patternId: number; review: boolean };
 
   constructor(private d: StudyDeps) {}
@@ -42,7 +43,9 @@ export class StudyService {
     const isDone = (c: ChapterRef) => c.patternIds.every((id) => this.progress.get(id)?.state === "done");
     this.chapter = (chapterId !== undefined ? all.find((c) => c.chapterId === chapterId) : all.find((c) => !isDone(c))) ?? all[all.length - 1]!;
     const byPattern = new Map<number, number[]>(); this.sentences.clear();
+    this.templates.clear();
     for (const id of this.chapter.patternIds) {
+      this.templates.set(id, (await this.d.content.pattern(id))?.template ?? "");
       const ss = await this.d.content.sentences(id, this.d.tracks);
       byPattern.set(id, ss.map((s) => s.sentenceId)); for (const s of ss) this.sentences.set(s.sentenceId, s);
     }
@@ -71,7 +74,7 @@ export class StudyService {
     if (!this.session || !this.chapter) throw new Error("open() 먼저");
     const p = this.session.next(); if (!p) { this.current = undefined; return undefined; }
     this.current = p; const s = this.sentences.get(p.sentenceId)!;
-    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: p.review, hintAvailable: !!s.mustUse, timeLimitSec: timeLimitSec(s.en), board: this.session.board(), chapterId: this.chapter.chapterId };
+    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: p.review, hintAvailable: !!s.mustUse, timeLimitSec: timeLimitSec(s.en), patternNo: this.chapter.patternIds.indexOf(s.patternId) + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: this.chapter.level, board: this.session.board(), chapterId: this.chapter.chapterId };
   }
 
   hint(sentenceId: number): string | undefined { return this.sentences.get(sentenceId)?.mustUse; }
