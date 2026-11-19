@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Card as CardT, type Submit, type Summary } from "./api";
 import { diffWords } from "./diff";
+/** 읽을 문맥: "Q: ..." 는 상대 말, "(...)" 는 상황 설명이라 괄호를 벗겨 읽는다. */
+const speakable = (c?: string | null): string => (!c ? "" : c.startsWith("Q: ") ? c.slice(3) : c.startsWith("(") && c.endsWith(")") ? c.slice(1, -1) : "");
 import { cancelSpeech, setTtsEnabled, speak, speakSequence, ttsEnabled, ttsSupported } from "./tts";
 import { Badge, Btn, Card, Modal, useToast } from "./ui";
 
@@ -41,7 +43,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
         setLeft(r.card.timeLimitSec); setTiming(false); startedAt.current = 0;
         setTimeout(() => ta.current?.focus(), 30);
         const start = () => { if (id === loadId.current) { startedAt.current = Date.now(); setTiming(true); } };
-        const q = r.card.context?.startsWith("Q: ") ? r.card.context.slice(3) : "";
+        const q = speakable(r.card.context);
         if (ttsRef.current && q) { setSpeaking(true); void speak(q).then(() => { if (id === loadId.current) setSpeaking(false); start(); }); } // 재생이 끝나거나 오류·시간 초과면 그때 시작
         else start(); // TTS OFF: 카드가 보이는 즉시 시작
       } else { setCard(null); if (r.summary) setSummary(r.summary); else setChapterDone(true); }
@@ -66,7 +68,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
       if (r.kind === "error") { toast(r.message, "warn"); return; }
       if (r.verdict === "MINOR_TYPO") { toast("오타 같아요. 다시 입력해 보세요 (기록되지 않아요)", "info"); ta.current?.focus(); return; }
       setRes({ ...r, input: input.trim() });
-      if (ttsRef.current) { const q = card.context?.startsWith("Q: ") ? card.context.slice(3) : ""; void speakSequence([...(q ? [q, 650] : []), r.answer]); } // 질문 → 간격 → 모범 정답
+      if (ttsRef.current) { const q = speakable(card.context); void speakSequence([...(q ? [q, 650] : []), r.answer]); } // 질문 → 간격 → 모범 정답
       if (r.patternCompleted) { toast("🎉 패턴 완료! 학습완료 노트로 이동했어요", "ok"); onChanged(); }
       if (r.chapterCompleted) toast("🏆 챕터 완료!", "ok");
     } catch (e) { toast(e instanceof Error ? e.message : "제출 실패", "warn"); }
