@@ -84,7 +84,7 @@ export class StudyService {
     const r = await this.d.grading.grade(input, s.answers, s.context);
     if (r.verdict === "ERROR") return { kind: "error", message: "채점 오류 — 답안은 보관되었습니다. 다시 시도해 주세요." }; // 카운터 불변
     const overTime = elapsedMs > timeLimitSec(s.en) * 1000;
-    const ev: AppEvent = { v: 1, type: "AttemptGraded", sentenceId, patternId: s.patternId, verdict: r.verdict, usedHint, overTime, input, graderVersion: GRADER_VERSION, elapsedMs };
+    const ev: AppEvent = { v: 1, type: "AttemptGraded", sentenceId, patternId: s.patternId, verdict: r.verdict, usedHint, overTime, input, graderVersion: GRADER_VERSION, elapsedMs, at: this.d.now() };
     this.d.bus?.(ev);
     await this.d.store.recordAttempt(this.d.userId, ev);
     this.notes = onAttemptGraded(this.notes, ev, this.d.now());

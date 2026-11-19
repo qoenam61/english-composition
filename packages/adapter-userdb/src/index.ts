@@ -26,7 +26,7 @@ export class SqliteUserStore implements UserStore {
     this.db.prepare("INSERT OR REPLACE INTO user_pattern_state VALUES (?,?,?,?,?,?,?,?)").run(userId, p.patternId, p.streak, p.state, p.hintOnlyStreak, p.consecutiveFails, JSON.stringify(p.seenSentenceIds), p.lastSeenAt ?? null);
   }
   async recordAttempt(userId: string, e: AttemptGraded): Promise<void> {
-    this.db.prepare("INSERT INTO attempt(user_id,sentence_id,pattern_id,input_text,verdict,used_hint,over_time,grader_version,at,elapsed_ms) VALUES (?,?,?,?,?,?,?,?,?,?)").run(userId, e.sentenceId, e.patternId, e.input, e.verdict, e.usedHint ? 1 : 0, e.overTime ? 1 : 0, e.graderVersion, Date.now(), e.elapsedMs ?? 0);
+    this.db.prepare("INSERT INTO attempt(user_id,sentence_id,pattern_id,input_text,verdict,used_hint,over_time,grader_version,at,elapsed_ms) VALUES (?,?,?,?,?,?,?,?,?,?)").run(userId, e.sentenceId, e.patternId, e.input, e.verdict, e.usedHint ? 1 : 0, e.overTime ? 1 : 0, e.graderVersion, e.at ?? Date.now(), e.elapsedMs ?? 0);
   }
   async attempts(userId: string): Promise<AttemptRecord[]> {
     return (this.db.prepare("SELECT * FROM attempt WHERE user_id=? ORDER BY attempt_id").all(userId) as any[]).map((r) => ({ patternId: r.pattern_id, sentenceId: r.sentence_id, verdict: r.verdict, usedHint: !!r.used_hint, overTime: !!r.over_time, elapsedMs: r.elapsed_ms ?? 0, input: r.input_text, at: r.at }));
