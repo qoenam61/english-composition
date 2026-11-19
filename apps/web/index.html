@@ -48,11 +48,17 @@ header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:lin
 .chip span{letter-spacing:0;font-weight:500;color:var(--ink);overflow-wrap:anywhere}
 .chip.review{background:var(--warn-soft);color:var(--warn)}
 .ctx{margin:0 0 6px;color:var(--mute);font-size:14px}
-.qline{display:flex;align-items:flex-start;gap:10px;margin:0 0 12px}
+.qline{display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;max-width:94%}
 .qb{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 12px var(--en);background:var(--indigo-soft);color:var(--indigo)}
 .qb.a{background:var(--accent-soft);color:var(--accent)}
 .qtxt{background:var(--surface);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:8px 14px;font:500 16px/1.5 var(--en);color:var(--ink)}
 .sit{margin:0 0 12px;color:var(--mute);font:italic 400 14px/1.5 var(--en)}
+.chat{display:flex;flex-direction:column}
+.thought{align-self:flex-end;max-width:94%;border:1px dashed var(--line-strong);border-radius:16px 4px 16px 16px;padding:10px 16px 12px}
+.thought .tl{font:600 11px var(--en);color:var(--faint);letter-spacing:.06em;text-align:right;margin-bottom:2px}
+.thought .ko{text-align:right;font-size:clamp(20px,4.6vw,26px)}
+.myrow{display:flex;align-items:flex-end;gap:10px}
+.myrow .inbox{flex:1;min-width:0;border-radius:16px 16px 4px 16px}
 .ainput{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 12px var(--en);background:var(--accent-soft);color:var(--accent)}
 .ko{margin:0;font:700 clamp(24px,5.4vw,32px)/1.4 var(--ko);letter-spacing:-.02em;text-wrap:balance;word-break:keep-all}
 
@@ -227,15 +233,15 @@ function render(){
   $("progLabel").textContent=card.mode==="chapter"?`${card.level} · 챕터 ${card.chapterId}`:`${card.level} · ${card.patternNo}/${card.board.total}`;
   $("main").innerHTML=`
     <div class="pattern"><div class="chip ${card.review?"review":""}">${card.review?"복습 · ":""}${card.mode==="chapter"?"PATTERN "+String(card.patternNo).padStart(2,"0"):"문제 "+card.patternNo}${card.patternTemplate?` <span>${esc(card.patternTemplate)}</span>`:""}</div></div>
-    <div>${ctxHtml(card.context)}<h1 class="ko">${esc(card.ko)}</h1></div>
+    <div class="chat">${ctxHtml(card.context)}<div class="thought"><div class="tl">내가 하고 싶은 말</div><h1 class="ko">${esc(card.ko)}</h1></div></div>
     <div>
-      <div class="inbox" id="inbox">
+      <div class="myrow"><div class="inbox" id="inbox">
         <div class="inrow">
-          ${/^Q:/.test(card.context||"")?'<span class="ainput" aria-hidden="true">A</span>':""}<input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="답변을 영어로 입력하세요" aria-label="영어 답안">
+          <input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="답변을 영어로 입력하세요" aria-label="영어 답안">
           <span class="count" id="cnt">0 단어</span><span class="key" id="enterKey" aria-hidden="true">↵</span>
         </div>
         <div class="gauge" id="gauge"><i></i></div>
-      </div>
+      </div>${/^Q:/.test(card.context||"")?'<span class="ainput" aria-hidden="true">A</span>':""}</div>
       <div class="timelabel" id="tl"><span>${limit}초 기준</span><span></span></div>
     </div>
     <div class="actions">
