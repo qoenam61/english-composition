@@ -2,8 +2,9 @@
 
 > 숫자는 제3자 블로그 기준이며 제공사가 예고 없이 바꾼다. 쓰기 전에 각 공식 문서에서 다시 확인할 것.
 
-## 1. 채점(LLM 판정) — 현재 구성
-- 기본: `claude` CLI, **모델 haiku** (`JUDGE_MODEL`로 변경). 구독 한도를 쓰되 호출당 토큰이 작다.
+## 1. 채점·정정·코멘트(LLM 판정) — 현재 구성
+- **기본 순서(2026-11-20 사용자 지정): 1순위 Groq(무료), 2순위 `claude` CLI haiku** (`JUDGE_CHAIN=groq,claude`). Groq는 `GROQ_API_KEY`가 있을 때만 쓰고 없으면 건너뛴다. 판정·정정·한 줄 코멘트는 같은 호출 하나에서 나온다.
+- claude 모델은 haiku(`JUDGE_MODEL`로 변경). 구독 한도를 쓰되 호출당 토큰이 작다.
 - 무료 외부 LLM을 앞에 붙이는 설정(OpenAI 호환 API라면 어디든 가능):
   ```
   JUDGE_CHAIN=openai,claude          # 앞에서부터 시도, 실패·한도 시 다음으로
@@ -38,9 +39,9 @@
 **추천**: 개인 학습은 Kokoro(로컬 서버)로 전환, 공개 단계에서는 문장 음성을 **미리 생성해 파일로 배포**(문장 수가 고정이라 가능)하면 서버 비용과 지연이 없다.
 
 ## 4. TTS 전환 설정
+기본 순서: **Kokoro(로컬 서버) → 브라우저 음성** (`TTS_CHAIN=kokoro,browser`). 브라우저 음성만 쓰려면 `TTS_CHAIN=browser`.
 ```
-TTS_PROVIDER=browser        # 기본. 브라우저 음성
-TTS_PROVIDER=server         # 서버 TTS 사용
+TTS_CHAIN=kokoro,browser    # 기본
 TTS_URL=http://127.0.0.1:8880/v1   # OpenAI 호환 TTS 서버(예: Kokoro-FastAPI)
 TTS_VOICE=af_heart
 TTS_MODEL=kokoro

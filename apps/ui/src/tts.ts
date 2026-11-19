@@ -8,6 +8,7 @@ export function ttsEnabled(): boolean { try { return localStorage.getItem(KEY) =
 export function setTtsEnabled(on: boolean): void { try { localStorage.setItem(KEY, on ? "on" : "off"); } catch { /* 저장 불가여도 동작은 한다 */ } if (!on) cancelSpeech(); }
 
 let epoch = 0; // 올라가면 진행 중인 재생 대기열은 모두 무효
+let serverDownUntil = 0; // 서버 음성이 실패하면 이 시각까지는 브라우저 음성으로 바로 간다
 const finishers = new Set<() => void>(); let audio: HTMLAudioElement | null = null;
 export function cancelSpeech(): void {
   epoch++; if (browserOk()) window.speechSynthesis.cancel();
@@ -24,10 +25,11 @@ export function speak(text: string): Promise<void> {
     const words = text.trim().split(/\s+/).length;
     const timer = setTimeout(finish, 3500 + words * 700); // 안전장치: 이 시간이 지나면 끝난 것으로 본다
     const browserSpeak = () => { if (!browserOk()) return finish(); try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; u.onend = finish; u.onerror = finish; window.speechSynthesis.speak(u); } catch { finish(); } };
-    if (provider === "server") { // 서버 음성: 재생 실패(자동재생 차단·서버 오류)면 브라우저 음성으로 대신한다
-      try { const a = new Audio("/api/tts?text=" + encodeURIComponent(text)); audio = a; a.onended = finish; a.onerror = browserSpeak; void a.play().catch(browserSpeak); } catch { browserSpeak(); }
+    if (provider === "server" && Date.now() >= serverDownUntil) { // 서버 음성: 재생 실패(자동재생 차단·서버 오류)면 브라우저 음성으로 대신한다
+      try { const a = new Audio("/api/tts?text=" + encodeURIComponent(text)); audio = a; const fall = () => { serverDownUntil = Date.now() + 60_000; browserSpeak(); }; a.onended = finish; a.onerror = fall; void a.play().catch(fall); } catch { browserSpeak(); }
       return;
     }
+    if (provider === "server") return browserSpeak(); // 서버 음성이 최근 실패했으면 60초간 바로 브라우저 음성
     try {
       const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95;
       u.onend = finish; u.onerror = finish;

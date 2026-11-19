@@ -13,19 +13,23 @@ import { StudyService } from "@app/app";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const content = new SqliteContentRepository(process.env.PACK ?? root + "dist/pack-personal.sqlite");
 const store = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
-// 판정기 설정(환경변수). JUDGE_CHAIN=앞에서부터 시도할 판정기 목록, 기본 "claude"(haiku). 예: JUDGE_CHAIN=openai,claude
-//   claude: JUDGE_MODEL(기본 haiku) / openai(OpenAI 호환: Groq·Gemini 호환·OpenRouter·Ollama 등): JUDGE_BASE_URL, JUDGE_API_KEY, JUDGE_API_MODEL / JUDGE=off 면 LLM 판정 없음
+// 판정·정정·코멘트 설정(환경변수). JUDGE_CHAIN=앞에서부터 시도할 판정기, 기본 "groq,claude" = 1순위 Groq(무료), 2순위 claude haiku.
+//   groq: GROQ_API_KEY(없으면 건너뜀), GROQ_MODEL(기본 openai/gpt-oss-120b) / claude: JUDGE_MODEL(기본 haiku)
+//   openai(그 밖의 OpenAI 호환): JUDGE_BASE_URL, JUDGE_API_KEY, JUDGE_API_MODEL / JUDGE=off 면 LLM 판정 없음
 function buildJudge(): LlmJudge | undefined {
   if (process.env.JUDGE === "off") return undefined;
   const list: LlmJudge[] = [];
-  for (const name of (process.env.JUDGE_CHAIN ?? "claude").split(",").map((x) => x.trim()).filter(Boolean)) {
-    if (name === "claude") list.push(new ClaudeCliJudge({ model: process.env.JUDGE_MODEL ?? "haiku" }));
+  for (const name of (process.env.JUDGE_CHAIN ?? "groq,claude").split(",").map((x) => x.trim()).filter(Boolean)) {
+    if (name === "groq" && process.env.GROQ_API_KEY) list.push(new OpenAiCompatJudge({ baseUrl: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY, model: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b" }));
+    else if (name === "claude") list.push(new ClaudeCliJudge({ model: process.env.JUDGE_MODEL ?? "haiku" }));
     else if (name === "openai" && process.env.JUDGE_BASE_URL && process.env.JUDGE_API_MODEL) list.push(new OpenAiCompatJudge({ baseUrl: process.env.JUDGE_BASE_URL, apiKey: process.env.JUDGE_API_KEY, model: process.env.JUDGE_API_MODEL }));
   }
   return list.length === 0 ? undefined : list.length === 1 ? list[0] : new ChainJudge(list);
 }
-// 음성 설정: TTS_PROVIDER=browser(기본, 브라우저 내장) | server(OpenAI 호환 TTS 서버, 예: 로컬 Kokoro). server 일 때 TTS_URL, TTS_VOICE, TTS_MODEL.
-const ttsProvider = process.env.TTS_PROVIDER === "server" ? "server" : "browser";
+// 음성 설정: TTS_CHAIN=앞에서부터 시도할 엔진, 기본 "kokoro,browser" = 1순위 로컬 Kokoro(OpenAI 호환 서버), 실패 시 브라우저 음성.
+//   kokoro 서버: TTS_URL(기본 http://127.0.0.1:8880/v1), TTS_VOICE, TTS_MODEL. TTS_CHAIN=browser 면 브라우저 음성만. (옛 TTS_PROVIDER=server|browser 도 인식)
+const ttsChain = (process.env.TTS_CHAIN ?? (process.env.TTS_PROVIDER === "browser" ? "browser" : "kokoro,browser")).split(",").map((x) => x.trim());
+const ttsProvider = ttsChain[0] === "kokoro" ? "server" : "browser";
 const ttsCache = new Map<string, Buffer>();
 async function ttsAudio(text: string): Promise<Buffer> {
   const hit = ttsCache.get(text); if (hit) return hit;
