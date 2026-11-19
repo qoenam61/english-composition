@@ -9,7 +9,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint:deps": "node tools/check-deps.mjs",
-    "web": "tsx apps/server/server.ts"
+    "web": "tsx apps/server/server.ts",
+    "ui:build": "npm --prefix apps/ui run build",
+    "ui:dev": "npm --prefix apps/ui run dev"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
