@@ -4,3 +4,5 @@ private/
 .env
 node_modules/
 __pycache__/
+data/
+dist/
