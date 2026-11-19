@@ -118,6 +118,18 @@ describe("StudyService", () => {
     expect(svc.hint(card.sentenceId)).toBe("be good at");
   });
   it("제한 시간은 문장 길이로 정한다", () => {
-    expect([timeLimitSec("a b c"), timeLimitSec("a b c d e f g h"), timeLimitSec("a b c d e f g h i j k l m")]).toEqual([15, 20, 30]);
+    expect([timeLimitSec("a b c"), timeLimitSec("a b c d e f g h"), timeLimitSec("a b c d e f g h i j k l m")]).toEqual([45, 60, 90]);
+  });
+
+  it("정답(패턴 미카운트)은 정답으로 보이지만 연속 정답·완료에 반영되지 않는다", async () => {
+    const judge = { judge: async () => ({ verdict: "OK_NO_COUNT" as const, comment: "문법은 맞지만 be going to가 더 자연스러워요." }) };
+    const store = new SqliteUserStore(); const clock = { t: 1_000 };
+    const svc = new StudyService({ userId: "u", content, store, grading: new GradingService(judge), rng: lcg(2), now: () => clock.t, tracks: ["original"] });
+    await svc.open(); const c = svc.next()!;
+    const r = await svc.submit(c.sentenceId, "totally different but fine", false, 1000);
+    expect(r).toMatchObject({ kind: "graded", verdict: "OK_NO_COUNT", counted: false, comment: "문법은 맞지만 be going to가 더 자연스러워요." });
+    const p = (await store.progress("u")).get(c.patternId)!;
+    expect(p.streak).toBe(0); expect(p.state).not.toBe("done");
+    expect((await svc.notesView()).wrong).toHaveLength(0); // 오답노트에도 없다
   });
 });

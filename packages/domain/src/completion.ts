@@ -8,6 +8,11 @@ export function applyAttempt(p: PatternProgress, a: AttemptInput): PatternProgre
   if (p.state === "done") return p;
   const next = { ...p };
   if (a.verdict === "MINOR_TYPO") return next; // 올리지도 초기화하지도 않음, 다시 입력
+  if (a.verdict === "OK_NO_COUNT") { // 틀린 것도 맞힌 것도 아닌 중립: 연속 정답·완료 카운터를 건드리지 않고 그 패턴은 계속 출제된다
+    next.consecutiveFails = 0;
+    next.state = p.state === "new" ? "learning" : p.state;
+    return next;
+  }
   if (a.verdict === "FAIL") {
     next.streak = 0;
     next.hintOnlyStreak = 0;

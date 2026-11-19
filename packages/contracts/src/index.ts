@@ -30,7 +30,10 @@ export interface UserStore {
   recordAttempt(userId: string, e: AttemptGraded): Promise<void>;
   dueReviews(userId: string, now: number): Promise<number[]>;
 }
-export interface LlmJudge { judge(input: string, answers: string[], context?: string): Promise<Verdict> }
+export interface JudgeInfo { ko?: string; template?: string; genderFree?: boolean }
+export interface JudgeOutcome { verdict: Verdict; comment?: string }
+/** 반환은 Verdict 문자열 또는 코멘트가 붙은 결과(둘 다 허용). */
+export interface LlmJudge { judge(input: string, answers: string[], context?: string, info?: JudgeInfo): Promise<Verdict | JudgeOutcome> }
 export interface SpeechInput { available(): boolean; start(onText: (t: string, confidence: number) => void): void; stop(): void }
 export interface SpeechOutput { speak(text: string): Promise<void> }
 export interface Haptics { pulse(kind: "pass" | "fail"): void }

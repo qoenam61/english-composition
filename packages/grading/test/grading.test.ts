@@ -29,3 +29,21 @@ describe("GradingService", () => {
     expect(await new GradingService().grade("Give me a table.", A)).toMatchObject({ verdict: "FAIL" });
   });
 });
+
+describe("1차 로컬 정규화", () => {
+  it.each([
+    ["He's a doctor.", ["He is a doctor."]], ["It's raining.", ["It is raining."]], ["I'm tired.", ["I am tired."]],
+    ["I don't know.", ["I do not know."]], ["I'm gonna leave.", ["I am going to leave."]], ["They're here", ["They are here."]],
+    ["Yes, I do.", ["I do."]], ["Well, I think so.", ["I think so."]], ["No, I don't.", ["I do not."]], ["Actually,  it's fine!", ["It is fine."]],
+  ])("%s 는 정답", (input, ans) => expect(codeJudge(input, ans)).toBe("PASS"));
+  it("구두점 없는 No problem 은 추임새로 보지 않는다", () => expect(codeJudge("No problem.", ["Problem."])).not.toBe("PASS"));
+  it("한국어에 성별 지칭이 없으면 he/she 는 같은 것", () => {
+    expect(codeJudge("She is a doctor.", ["He is a doctor."], true)).toBe("PASS");
+    expect(codeJudge("She is a doctor.", ["He is a doctor."], false)).not.toBe("PASS");
+  });
+  it("성별 판정", async () => { const { isGenderFree } = await import("../src/index.js"); expect(isGenderFree("걔 내 언니랑 동갑이야.")).toBe(true); expect(isGenderFree("그녀는 의사예요.")).toBe(false); expect(isGenderFree("그는 학생이에요.")).toBe(false); });
+  it("LLM 코멘트를 그대로 전달한다", async () => {
+    const g = new GradingService({ judge: async () => ({ verdict: "FAIL" as const, comment: "go→went" }) });
+    expect(await g.grade("I go there yesterday.", A, undefined, { ko: "어제 거기 갔어요." })).toMatchObject({ verdict: "FAIL", comment: "go→went", by: "llm" });
+  });
+});

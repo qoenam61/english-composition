@@ -5,13 +5,14 @@ import { fileURLToPath } from "node:url";
 import { SqliteContentRepository } from "@app/adapter-content";
 import { SqliteUserStore } from "@app/adapter-userdb";
 import { GradingService } from "@app/grading";
+import { ClaudeCliJudge } from "@app/adapter-llm";
 import { StudyService } from "@app/app";
 
 // 조립 지점(composition root): 어떤 어댑터를 쓸지는 여기서만 정한다.
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const content = new SqliteContentRepository(process.env.PACK ?? root + "dist/pack-personal.sqlite");
 const store = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
-const study = new StudyService({ userId: "me", content, store, grading: new GradingService(), rng: Math.random, now: Date.now, tracks: ["original", "own"] });
+const study = new StudyService({ userId: "me", content, store, grading: new GradingService(process.env.JUDGE === "off" ? undefined : new ClaudeCliJudge({ model: process.env.JUDGE_MODEL ?? "sonnet" })), rng: Math.random, now: Date.now, tracks: ["original", "own"] });
 const uiDir = root + "apps/ui/dist"; // React 빌드 결과가 있으면 그것을, 없으면 예전 단일 페이지를 쓴다
 const legacyPage = readFileSync(root + "apps/web/index.html", "utf8");
 const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png" };

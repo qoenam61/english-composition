@@ -12,13 +12,13 @@ export interface CardView {
 export type PracticeKind = "weak" | "free";
 export interface PracticeSummary { kind: PracticeKind; total: number; answered: number; correct: number; avgMs: number; firstTryPct: number; grade: "S" | "A" | "B" | "C"; missedPatternIds: number[]; patterns: string[] }
 export type SubmitView =
-  | { kind: "graded"; verdict: "PASS" | "MINOR_TYPO" | "FAIL"; answer: string; patternCompleted: boolean; chapterCompleted: boolean; board: ChapterBoard }
+  | { kind: "graded"; verdict: "PASS" | "MINOR_TYPO" | "FAIL" | "OK_NO_COUNT"; counted: boolean; comment?: string; answer: string; patternCompleted: boolean; chapterCompleted: boolean; board: ChapterBoard }
   | { kind: "error"; message: string };
 
-/** 시간 제한: 영어 단어 6개 이하 15초 / 12개 이상 30초 / 그 사이 20초. */
+/** 시간 제한(기존의 3배): 영어 단어 6개 이하 45초 / 12개 이상 90초 / 그 사이 60초. */
 export function timeLimitSec(en: string): number {
   const n = en.trim().split(/\s+/).length;
-  return n <= 6 ? 15 : n >= 12 ? 30 : 20;
+  return n <= 6 ? 45 : n >= 12 ? 90 : 60;
 }
 
 export interface StudyDeps {
@@ -150,7 +150,7 @@ export class StudyService {
 
   private async submitPractice(sentenceId: number, input: string, usedHint: boolean, elapsedMs: number): Promise<SubmitView> {
     const p = this.practice!; const s = this.sentences.get(sentenceId)!;
-    const r = await this.d.grading.grade(input, s.answers, s.context);
+    const r = await this.d.grading.grade(input, s.answers, s.context, { ko: s.ko, template: this.templates.get(s.patternId) });
     if (r.verdict === "ERROR") return { kind: "error", message: "채점 오류 — 답안은 보관되었습니다. 다시 시도해 주세요." };
     if (p.kind === "weak") { // 집중 공략은 정규 기록(오답노트·통계)에 남긴다. 자유 훈련은 아무것도 남기지 않는다.
       const ev: AppEvent = { v: 1, type: "AttemptGraded", sentenceId, patternId: s.patternId, verdict: r.verdict, usedHint, overTime: elapsedMs > timeLimitSec(s.en) * 1000, input, graderVersion: GRADER_VERSION, elapsedMs, at: this.d.now() };
@@ -158,8 +158,8 @@ export class StudyService {
       await this.d.store.recordAttempt(this.d.userId, ev);
       this.notes = onAttemptGraded(this.notes, ev, this.d.now());
     }
-    if (r.verdict !== "MINOR_TYPO") { p.results.push({ patternId: s.patternId, ok: r.verdict === "PASS" && !usedHint, ms: elapsedMs }); p.answered = true; }
-    return { kind: "graded", verdict: r.verdict, answer: s.answers[0] ?? s.en, patternCompleted: false, chapterCompleted: false, board: this.practiceBoard() };
+    if (r.verdict !== "MINOR_TYPO") { p.results.push({ patternId: s.patternId, ok: (r.verdict === "PASS" || r.verdict === "OK_NO_COUNT") && !usedHint, ms: elapsedMs }); p.answered = true; }
+    return { kind: "graded", verdict: r.verdict, counted: r.verdict === "PASS", comment: "comment" in r ? r.comment : undefined, answer: s.answers[0] ?? s.en, patternCompleted: false, chapterCompleted: false, board: this.practiceBoard() };
   }
 
   /** 로드맵: 챕터별 진행 상태. 잠금 = 처음 미완료 챕터 이후. */
@@ -220,7 +220,7 @@ export class StudyService {
     if (this.practice && this.current?.sentenceId === sentenceId) return this.submitPractice(sentenceId, input, usedHint, elapsedMs);
     if (!this.session || !this.current || this.current.sentenceId !== sentenceId) throw new Error("현재 문제가 아니다");
     const s = this.sentences.get(sentenceId)!;
-    const r = await this.d.grading.grade(input, s.answers, s.context);
+    const r = await this.d.grading.grade(input, s.answers, s.context, { ko: s.ko, template: this.templates.get(s.patternId) });
     if (r.verdict === "ERROR") return { kind: "error", message: "채점 오류 — 답안은 보관되었습니다. 다시 시도해 주세요." }; // 카운터 불변
     const overTime = elapsedMs > timeLimitSec(s.en) * 1000;
     const ev: AppEvent = { v: 1, type: "AttemptGraded", sentenceId, patternId: s.patternId, verdict: r.verdict, usedHint, overTime, input, graderVersion: GRADER_VERSION, elapsedMs, at: this.d.now() };
@@ -234,6 +234,6 @@ export class StudyService {
       await this.d.store.recordCompletion(this.d.userId, s.patternId, this.d.now());
       await this.d.store.saveSchedule(this.d.userId, s.patternId, 0, nextDue(0, this.d.now()));
     }
-    return { kind: "graded", verdict: r.verdict, answer: s.answers[0] ?? s.en, patternCompleted: out.patternCompleted, chapterCompleted: out.chapterCompleted, board: out.board };
+    return { kind: "graded", verdict: r.verdict, counted: r.verdict === "PASS", comment: "comment" in r ? r.comment : undefined, answer: s.answers[0] ?? s.en, patternCompleted: out.patternCompleted, chapterCompleted: out.chapterCompleted, board: out.board };
   }
 }
