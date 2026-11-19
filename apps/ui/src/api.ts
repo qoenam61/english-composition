@@ -1,7 +1,7 @@
 export interface Board { total: number; done: number; remaining: number; badges: boolean[]; complete: boolean }
 export interface Card { sentenceId: number; patternId: number; ko: string; context?: string; review: boolean; hintAvailable: boolean; timeLimitSec: number; patternNo: number; patternTemplate: string; level: string; board: Board; chapterId: number; mode: "chapter" | "weak" | "free" }
-export type Verdict = "PASS" | "MINOR_TYPO" | "FAIL";
-export type Submit = { kind: "graded"; verdict: Verdict; answer: string; patternCompleted: boolean; chapterCompleted: boolean; board: Board } | { kind: "error"; message: string };
+export type Verdict = "PASS" | "MINOR_TYPO" | "FAIL" | "OK_NO_COUNT";
+export type Submit = { kind: "graded"; verdict: Verdict; counted: boolean; by: "code" | "llm"; comment?: string; answer: string; patternCompleted: boolean; chapterCompleted: boolean; board: Board } | { kind: "error"; message: string };
 export interface Summary { kind: "weak" | "free"; total: number; answered: number; correct: number; avgMs: number; firstTryPct: number; grade: "S" | "A" | "B" | "C"; missedPatternIds: number[]; patterns: string[] }
 export type ErrType = "pattern_order" | "article_prep" | "vocab" | "tense";
 export interface WrongItem { patternId: number; sentenceId: number; wrongCount: number; lastWrongInput: string; lastWrongAt: number; ko: string; answer: string; template: string; error: { type: ErrType; label: string; comment: string } }

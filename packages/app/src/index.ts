@@ -12,7 +12,7 @@ export interface CardView {
 export type PracticeKind = "weak" | "free";
 export interface PracticeSummary { kind: PracticeKind; total: number; answered: number; correct: number; avgMs: number; firstTryPct: number; grade: "S" | "A" | "B" | "C"; missedPatternIds: number[]; patterns: string[] }
 export type SubmitView =
-  | { kind: "graded"; verdict: "PASS" | "MINOR_TYPO" | "FAIL" | "OK_NO_COUNT"; counted: boolean; comment?: string; answer: string; patternCompleted: boolean; chapterCompleted: boolean; board: ChapterBoard }
+  | { kind: "graded"; verdict: "PASS" | "MINOR_TYPO" | "FAIL" | "OK_NO_COUNT"; counted: boolean; by: "code" | "llm"; comment?: string; answer: string; patternCompleted: boolean; chapterCompleted: boolean; board: ChapterBoard }
   | { kind: "error"; message: string };
 
 /** 시간 제한(기존의 3배): 영어 단어 6개 이하 45초 / 12개 이상 90초 / 그 사이 60초. */
@@ -159,7 +159,7 @@ export class StudyService {
       this.notes = onAttemptGraded(this.notes, ev, this.d.now());
     }
     if (r.verdict !== "MINOR_TYPO") { p.results.push({ patternId: s.patternId, ok: (r.verdict === "PASS" || r.verdict === "OK_NO_COUNT") && !usedHint, ms: elapsedMs }); p.answered = true; }
-    return { kind: "graded", verdict: r.verdict, counted: r.verdict === "PASS", comment: "comment" in r ? r.comment : undefined, answer: s.answers[0] ?? s.en, patternCompleted: false, chapterCompleted: false, board: this.practiceBoard() };
+    return { kind: "graded", verdict: r.verdict, counted: r.verdict === "PASS", by: r.by, comment: "comment" in r ? r.comment : undefined, answer: s.answers[0] ?? s.en, patternCompleted: false, chapterCompleted: false, board: this.practiceBoard() };
   }
 
   /** 로드맵: 챕터별 진행 상태. 잠금 = 처음 미완료 챕터 이후. */
@@ -234,6 +234,6 @@ export class StudyService {
       await this.d.store.recordCompletion(this.d.userId, s.patternId, this.d.now());
       await this.d.store.saveSchedule(this.d.userId, s.patternId, 0, nextDue(0, this.d.now()));
     }
-    return { kind: "graded", verdict: r.verdict, counted: r.verdict === "PASS", comment: "comment" in r ? r.comment : undefined, answer: s.answers[0] ?? s.en, patternCompleted: out.patternCompleted, chapterCompleted: out.chapterCompleted, board: out.board };
+    return { kind: "graded", verdict: r.verdict, counted: r.verdict === "PASS", by: r.by, comment: "comment" in r ? r.comment : undefined, answer: s.answers[0] ?? s.en, patternCompleted: out.patternCompleted, chapterCompleted: out.chapterCompleted, board: out.board };
   }
 }

@@ -40,3 +40,20 @@ export function Modal({ open, onClose, children }: { open: boolean; onClose: () 
   );
 }
 export const fmtDate = (t: number) => { const d = new Date(t); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+
+/** 페이지 이동: 이전/다음과 번호(현재 주변만). 페이지가 바뀌면 맨 위로 올린다. */
+export function Pager({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
+  if (pages <= 1) return null;
+  const go = (p: number) => { onPage(Math.min(Math.max(p, 0), pages - 1)); window.scrollTo({ top: 0 }); };
+  const nums: Array<number | "…"> = []; const want = new Set([0, pages - 1, page - 1, page, page + 1].filter((n) => n >= 0 && n < pages));
+  [...want].sort((a, b) => a - b).forEach((n, i, a) => { if (i > 0 && n - a[i - 1]! > 1) nums.push("…"); nums.push(n); });
+  const b = "min-w-9 h-9 px-2 rounded-lg font-bold text-sm border-b-2";
+  return (
+    <nav className="flex items-center justify-center gap-1.5 flex-wrap pt-2" aria-label="페이지 이동">
+      <button disabled={page === 0} onClick={() => go(page - 1)} className={`${b} bg-surface text-t2 border-app disabled:opacity-30`}>◀</button>
+      {nums.map((n, i) => n === "…" ? <span key={"e" + i} className="text-t3 px-1">…</span> : <button key={n} onClick={() => go(n)} aria-current={n === page} className={`${b} ${n === page ? "bg-sky text-white border-sky-d" : "bg-surface text-t2 border-app"}`}>{n + 1}</button>)}
+      <button disabled={page >= pages - 1} onClick={() => go(page + 1)} className={`${b} bg-surface text-t2 border-app disabled:opacity-30`}>▶</button>
+    </nav>
+  );
+}
+export const PAGE_SIZE = 10;
