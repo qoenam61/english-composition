@@ -44,7 +44,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
         setCard(r.card); setInput(""); setRes(null); setHint(null); setHintOpen(false); setUsedHint(false); setChapterDone(false);
         setLeft(r.card.timeLimitSec); setTiming(false); startedAt.current = 0;
         pending.current = null; setWaiting(false);
-        if (!window.matchMedia("(pointer: coarse)").matches) setTimeout(() => ta.current?.focus(), 30); // PC 는 바로 커서, 모바일은 사용자가 직접 눌러야 소리가 허용된다
+        setTimeout(() => { if (id === loadId.current) { ta.current?.focus(); readQuestion(); } }, 2000); // 카드가 뜨고 2초 뒤 입력창에 커서를 주고 질문을 읽는다(이미 포커스 상태여도 읽는다)
         const start = () => { if (id === loadId.current) { startedAt.current = Date.now(); setTiming(true); } };
         const q = speakable(r.card.context);
         if (ttsRef.current && q) { pending.current = { id, q, start }; setWaiting(true); } // 입력창에 커서가 생길 때 읽고, 읽기가 끝나면 카운트다운 시작
@@ -153,7 +153,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
               {tts && ttsSupported() && !res && <button type="button" onClick={() => { unlockAudio(); if (pending.current) readQuestion(); else replay(); }} aria-label="질문 듣기" className="shrink-0 w-9 h-9 rounded-full bg-surface border-b-2 border-app text-base">🔊</button>}
             </div>
           )}
-          {tts && waiting && !res && <div className="mb-2 text-xs font-bold text-sky">입력창을 누르면 질문을 읽어 드려요 (읽은 뒤에 카운트다운이 시작돼요)</div>}
+          {tts && waiting && !res && <div className="mb-2 text-xs font-bold text-sky">잠시 뒤 질문을 읽어 드려요 (입력창을 누르면 바로 읽고, 읽은 뒤에 카운트다운이 시작돼요)</div>}
           <div className="text-xs font-bold text-t3 mb-1.5">내가 하고 싶은 말</div>
           <Card className="px-4 py-4 mb-3 text-left"><p className="text-lg md:text-xl font-bold text-t1 leading-snug">{card.ko}</p></Card>
 
