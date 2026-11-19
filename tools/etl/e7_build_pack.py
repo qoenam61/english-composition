@@ -20,7 +20,7 @@ def stem(w):
 def contains(answer, must):
     words = [stem(x) for x in e2.skeleton(answer).split()]
     pos = -1
-    for t in (stem(x) for x in must.split()):
+    for t in (stem(x) for x in e2.skeleton(must).split()):
         try:
             pos = words.index(t, pos + 1)
         except ValueError:
@@ -37,7 +37,7 @@ if len(cp) != len(live) or any(n != 1 for _, n in cp): fails.append("패턴-챕�
 over = s.execute("SELECT c.level, c.n_patterns FROM chapter c").fetchall()
 bad = [1 for lv, n in over if n > CAP[lv]]
 if bad: fails.append(f"챕터 정원 초과 {len(bad)}")
-nomust = s.execute("SELECT sentence_id, a.answer_en, se.must_use FROM sentence se JOIN sentence_answer a USING(sentence_id)").fetchall()
+nomust = s.execute("SELECT sentence_id, a.answer_en, se.must_use FROM sentence se JOIN sentence_answer a USING(sentence_id) WHERE a.kind='canonical'").fetchall()
 miss = sum(1 for _, ans, m in nomust if not contains(ans, m))
 print(f"정답이 필수 구문을 포함하지 않는 문장: {miss} / {len(nomust)}")
 print("검증 실패 항목:", fails or "없음")
@@ -64,7 +64,7 @@ for t, n in (("sentence_answer", 4), ("chapter", 3), ("chapter_pattern", 3)):
 h = hashlib.sha256()
 for t in ("pattern", "sentence", "sentence_answer", "chapter", "chapter_pattern"):
     for r in o.execute(f"SELECT * FROM {t} ORDER BY 1,2"): h.update(repr(r).encode())
-o.execute("INSERT INTO pack_manifest VALUES ('pack-personal','0.1.0','original','2026-11-19',?)", (h.hexdigest(),))
+o.execute("INSERT INTO pack_manifest VALUES ('pack-personal','0.2.0','original','2026-11-19',?)", (h.hexdigest(),))
 o.commit()
 print("must_use 비움:", o.execute("SELECT COUNT(*) FROM sentence WHERE must_use IS NULL").fetchone()[0])
 for t in ("pattern", "sentence", "chapter", "chapter_pattern"):
