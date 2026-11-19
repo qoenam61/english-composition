@@ -3,7 +3,7 @@ import { api, type Card as CardT, type Submit, type Summary } from "./api";
 import { diffWords } from "./diff";
 /** 읽을 문맥: "Q: ..." 는 상대 말, "(...)" 는 상황 설명이라 괄호를 벗겨 읽는다. */
 const speakable = (c?: string | null): string => (!c ? "" : c.startsWith("Q: ") ? c.slice(3) : c.startsWith("(") && c.endsWith(")") ? c.slice(1, -1) : "");
-import { cancelSpeech, setTtsEnabled, speak, speakSequence, ttsEnabled, ttsSupported } from "./tts";
+import { cancelSpeech, setTtsEnabled, speak, speakSequence, ttsEnabled, ttsSupported, unlockAudio } from "./tts";
 import { Badge, Btn, Card, Modal, useToast } from "./ui";
 
 type Graded = Extract<Submit, { kind: "graded" }>;
@@ -29,6 +29,8 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
   const [grading, setGrading] = useState(false);
   const ttsRef = useRef(tts); ttsRef.current = tts;
   const loadId = useRef(0);
+  const pending = useRef<{ id: number; q: string; start: () => void } | null>(null); // 입력창을 누르면 읽을 질문(모바일은 사용자 동작 안에서만 소리가 허용된다)
+  const [waiting, setWaiting] = useState(false);
   const startedAt = useRef(0);
   const busy = useRef(false);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -41,10 +43,11 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
         const id = ++loadId.current; cancelSpeech(); setSpeaking(false);
         setCard(r.card); setInput(""); setRes(null); setHint(null); setHintOpen(false); setUsedHint(false); setChapterDone(false);
         setLeft(r.card.timeLimitSec); setTiming(false); startedAt.current = 0;
-        setTimeout(() => ta.current?.focus(), 30);
+        pending.current = null; setWaiting(false);
+        if (!window.matchMedia("(pointer: coarse)").matches) setTimeout(() => ta.current?.focus(), 30); // PC 는 바로 커서, 모바일은 사용자가 직접 눌러야 소리가 허용된다
         const start = () => { if (id === loadId.current) { startedAt.current = Date.now(); setTiming(true); } };
         const q = speakable(r.card.context);
-        if (ttsRef.current && q) { setSpeaking(true); void speak(q).then(() => { if (id === loadId.current) setSpeaking(false); start(); }); } // 재생이 끝나거나 오류·시간 초과면 그때 시작
+        if (ttsRef.current && q) { pending.current = { id, q, start }; setWaiting(true); } // 입력창에 커서가 생길 때 읽고, 읽기가 끝나면 카운트다운 시작
         else start(); // TTS OFF: 카드가 보이는 즉시 시작
       } else { setCard(null); if (r.summary) setSummary(r.summary); else setChapterDone(true); }
     } catch (e) { toast(e instanceof Error ? e.message : "불러오지 못했어요", "warn"); }
@@ -80,7 +83,13 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
     if (hint === null) { const h = await api.hint(card.sentenceId); setHint(h.hint ?? "힌트가 없어요"); }
     setUsedHint(true);
   };
-  const toggleTts = () => { const on = !tts; setTts(on); setTtsEnabled(on); if (!on) setSpeaking(false); }; // OFF 면 재생 중인 음성도 즉시 중단
+  const readQuestion = () => { // 입력창 포커스(또는 다시 듣기 버튼)에서 호출: 질문을 한 번 읽고 끝나면 카운트다운 시작
+    const p = pending.current; if (!p || p.id !== loadId.current) return;
+    pending.current = null; setWaiting(false); setSpeaking(true);
+    void speak(p.q).then(() => { if (p.id === loadId.current) setSpeaking(false); p.start(); });
+  };
+  const replay = () => { const q = speakable(card?.context); if (!q) return; cancelSpeech(); setSpeaking(true); void speak(q).then(() => setSpeaking(false)); };
+  const toggleTts = () => { const on = !tts; setTts(on); setTtsEnabled(on); if (!on) { setSpeaking(false); if (pending.current) { const p = pending.current; pending.current = null; setWaiting(false); p.start(); } } } // OFF 면 재생 중 음성 중단, 대기 중이던 카운트다운은 즉시 시작; // OFF 면 재생 중인 음성도 즉시 중단
   const endNow = async () => { const r = await api.next(); setCard(null); setSummary(r.summary); };
 
   useEffect(() => {
@@ -123,7 +132,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
             {ttsSupported() && <button type="button" onClick={toggleTts} aria-pressed={tts} className={`shrink-0 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-extrabold border-b-2 ${tts ? "bg-sky text-white border-sky-d" : "bg-surface text-t3 border-app"}`}>{tts ? "🔊 음성 ON" : "🔇 음성 OFF"}</button>}
             <div className="flex items-center gap-2 shrink-0" aria-label="남은 시간">
               <div className="w-20 h-2 rounded-full bg-surface overflow-hidden"><div className={`h-full ${gauge} transition-[width] duration-100`} style={{ width: `${res ? 0 : frac * 100}%` }} /></div>
-              <span className={`tabular-nums font-bold w-12 text-right ${frac <= 0.25 && !res ? "text-red" : "text-t3"}`}>{res ? "—" : speaking ? "🔊" : `${left.toFixed(1)}s`}</span>
+              <span className={`tabular-nums font-bold w-12 text-right ${frac <= 0.25 && !res ? "text-red" : "text-t3"}`}>{res ? "—" : speaking ? "🔊" : waiting ? "⏸" : `${left.toFixed(1)}s`}</span>
             </div>
           </div>
           <div className="relative h-4 rounded-full bg-surface overflow-hidden mb-1" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
@@ -141,14 +150,16 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
             <div className="flex items-start gap-2 mb-3">
               {ctxQ && <span className="shrink-0 w-7 h-7 rounded-full bg-sky text-white text-xs font-extrabold grid place-items-center mt-0.5">Q</span>}
               <div className={ctxQ ? "bg-card border-2 border-cardb rounded-2xl rounded-tl-sm px-4 py-2.5 text-t2" : "text-t3 italic px-1 py-1"}>{ctxText}</div>
+              {tts && ttsSupported() && !res && <button type="button" onClick={() => { unlockAudio(); if (pending.current) readQuestion(); else replay(); }} aria-label="질문 듣기" className="shrink-0 w-9 h-9 rounded-full bg-surface border-b-2 border-app text-base">🔊</button>}
             </div>
           )}
+          {tts && waiting && !res && <div className="mb-2 text-xs font-bold text-sky">입력창을 누르면 질문을 읽어 드려요 (읽은 뒤에 카운트다운이 시작돼요)</div>}
           <div className="text-xs font-bold text-t3 mb-1.5">내가 하고 싶은 말</div>
           <Card className="px-4 py-4 mb-3 text-left"><p className="text-lg md:text-xl font-bold text-t1 leading-snug">{card.ko}</p></Card>
 
           {!res ? (
             <>
-              <textarea ref={ta} value={input} onChange={(e) => setInput(e.target.value)} rows={3} enterKeyHint="send" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              <textarea ref={ta} onFocus={readQuestion} value={input} onChange={(e) => setInput(e.target.value)} rows={3} enterKeyHint="send" autoCapitalize="off" autoCorrect="off" spellCheck={false}
                 placeholder="영어로 말해 보세요" className="w-full text-base bg-surface border-2 border-surfb focus:border-sky outline-none rounded-2xl px-4 py-3 text-t1 placeholder:text-t3 resize-none" />
               <div className="flex items-center justify-between mt-3 gap-3">
                 <div className="flex items-center gap-3 text-sm text-t3">
