@@ -29,16 +29,20 @@ export function cancelSpeech(): void {
 
 /** 한 문장을 읽고 끝나면 resolve. 오류·취소·자동재생 차단으로 종료 이벤트가 안 와도 시간 초과 시 resolve 한다. */
 export type Role = "q" | "a"; // q=질문하는 사람, a=답하는 사람(목소리를 다르게 한다)
-/** 영어 음성 중 질문용·답변용을 서로 다른 것으로 고른다(하나뿐이면 같은 음성에 음높이만 달리한다). */
+/** 영어 음성 중 질문용은 여성, 답변용은 남성 음성을 이름으로 찾아 쓴다(없으면 서로 다른 음성, 그래도 없으면 같은 음성). 음높이는 건드리지 않는다(음질이 깨진다). */
+const FEMALE = /female|samantha|karen|moira|tessa|zira|aria|jenny|susan|victoria|allison|ava|serena|kate|fiona|google us english/i;
+const MALE = /\bmale\b|daniel|alex|david|mark|guy|fred|aaron|arthur|tom|oliver|james|rishi|google uk english male/i;
 function pickVoice(role: Role): SpeechSynthesisVoice | undefined {
   try {
     const all = window.speechSynthesis.getVoices().filter((v) => v.lang.startsWith("en"));
+    if (all.length === 0) return undefined;
     const us = all.filter((v) => v.lang === "en-US"); const pool = us.length >= 2 ? us : all;
-    if (pool.length === 0) return undefined;
-    return role === "q" ? pool[0] : pool[1] ?? pool[0];
+    const f = pool.find((v) => FEMALE.test(v.name) && !/\bmale\b/i.test(v.name.replace(/female/gi, "")));
+    const m = pool.find((v) => MALE.test(v.name.replace(/female/gi, "")));
+    if (role === "q") return f ?? pool[0];
+    return m ?? pool.find((v) => v !== (f ?? pool[0])) ?? pool[0];
   } catch { return undefined; }
 }
-const PITCH: Record<Role, number> = { q: 1.15, a: 0.85 }; // 같은 음성일 때도 다르게 들리도록
 export function speak(text: string, role: Role = "q"): Promise<void> {
   if (!ttsSupported() || !text.trim()) return Promise.resolve();
   return new Promise((resolve) => {
@@ -46,14 +50,14 @@ export function speak(text: string, role: Role = "q"): Promise<void> {
     finishers.add(finish);
     const words = text.trim().split(/\s+/).length;
     const timer = setTimeout(finish, 3500 + words * 700); // 안전장치: 이 시간이 지나면 끝난 것으로 본다
-    const browserSpeak = () => { if (!browserOk()) return finish(); try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; u.pitch = PITCH[role]; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v; u.onend = finish; u.onerror = finish; window.speechSynthesis.resume(); window.speechSynthesis.speak(u); } catch { finish(); } };
+    const browserSpeak = () => { if (!browserOk()) return finish(); try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v; u.onend = finish; u.onerror = finish; window.speechSynthesis.resume(); window.speechSynthesis.speak(u); } catch { finish(); } };
     if (provider === "server" && Date.now() >= serverDownUntil) { // 서버 음성: 재생 실패(자동재생 차단·서버 오류)면 브라우저 음성으로 대신한다
       try { const a = player ?? new Audio(); a.src = "/api/tts?role=" + role + "&text=" + encodeURIComponent(text); audio = a; const fall = () => { serverDownUntil = Date.now() + 60_000; browserSpeak(); }; a.onended = finish; a.onerror = fall; void a.play().catch(fall); } catch { browserSpeak(); }
       return;
     }
     if (provider === "server") return browserSpeak(); // 서버 음성이 최근 실패했으면 60초간 바로 브라우저 음성
     try {
-      const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; u.pitch = PITCH[role]; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v;
+      const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v;
       u.onend = finish; u.onerror = finish;
       window.speechSynthesis.resume(); window.speechSynthesis.speak(u);
     } catch { finish(); }
