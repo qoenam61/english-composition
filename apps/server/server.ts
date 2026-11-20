@@ -45,7 +45,7 @@ async function ttsServerUp(): Promise<boolean> {
 const ttsCache = new Map<string, Buffer>();
 // 질문(q)과 답변(a)은 다른 음성으로 읽는다: TTS_VOICE_Q(기본 af_heart, 구 TTS_VOICE 도 인식) / TTS_VOICE_A(기본 am_adam)
 async function ttsAudio(text: string, role: string): Promise<Buffer> {
-  const voice = role === "a" ? process.env.TTS_VOICE_A ?? "am_adam" : process.env.TTS_VOICE_Q ?? process.env.TTS_VOICE ?? "af_heart";
+  const voice = role === "a" ? process.env.TTS_VOICE_A ?? "am_michael" : process.env.TTS_VOICE_Q ?? process.env.TTS_VOICE ?? "af_heart";
   const key = voice + "|" + text;
   const hit = ttsCache.get(key); if (hit) return hit;
   const r = await fetch((process.env.TTS_URL ?? "http://127.0.0.1:8880/v1").replace(/\/$/, "") + "/audio/speech", {

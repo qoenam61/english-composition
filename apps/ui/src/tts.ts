@@ -10,18 +10,24 @@ export function setTtsEnabled(on: boolean): void { if (on) unlockAudio(); try { 
 let epoch = 0; // 올라가면 진행 중인 재생 대기열은 모두 무효
 // 모바일 브라우저는 "사용자가 직접 누른 순간"에만 소리를 허용한다. 그래서 첫 터치에서 공용 오디오 요소와 음성 합성을 미리 열어 둔다(이후 비동기 재생 허용).
 const player: HTMLAudioElement | null = typeof Audio !== "undefined" ? new Audio() : null;
-const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
-let unlocked = false;
+/** 0.3초짜리 진짜 무음 wav(샘플이 없는 빈 파일은 일부 모바일에서 재생이 거부돼 잠금이 안 풀린다). */
+function silentWav(): string {
+  const n = 2400, b = new Uint8Array(44 + n), v = new DataView(b.buffer); const w = (o: number, t: string) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + n, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true); b.fill(0x80, 44);
+  let bin = ""; b.forEach((x) => (bin += String.fromCharCode(x))); return "data:audio/wav;base64," + btoa(bin);
+}
+let unlocked = false, unlocking = false;
+/** 첫 터치에서 오디오와 음성 합성을 미리 연다. 성공할 때까지 터치마다 다시 시도한다. */
 export function unlockAudio(): void {
-  if (unlocked) return; unlocked = true;
-  try { if (player) { player.src = SILENT; void player.play().catch(() => { unlocked = false; }); } } catch { unlocked = false; }
-  try { if (browserOk()) { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; window.speechSynthesis.speak(u); window.speechSynthesis.getVoices(); } } catch { /* 무시 */ }
+  if (unlocked || unlocking) return; unlocking = true;
+  try { if (browserOk()) { const u = new SpeechSynthesisUtterance("."); u.volume = 0.01; window.speechSynthesis.speak(u); window.speechSynthesis.getVoices(); } } catch { /* 무시 */ }
+  try { if (player) { player.src = silentWav(); void player.play().then(() => { unlocked = true; unlocking = false; }).catch(() => { unlocking = false; }); } else { unlocked = true; unlocking = false; } } catch { unlocking = false; }
 }
 if (typeof window !== "undefined") for (const ev of ["pointerdown", "touchend", "keydown"]) window.addEventListener(ev, unlockAudio, { once: false, passive: true });
 const enVoice = (): SpeechSynthesisVoice | undefined => { try { const v = window.speechSynthesis.getVoices(); return v.find((x) => x.lang === "en-US") ?? v.find((x) => x.lang.startsWith("en")); } catch { return undefined; } };
 /** 마지막으로 읽은 엔진과(대체됐다면) 이유 — 화면에 보여 원인을 알 수 있게 한다. */
 let info = "";
-export const ttsInfo = (): string => info;
+export const ttsInfo = (): string => info || (provider === "server" ? "Kokoro" : "브라우저 음성");
 let serverDownUntil = 0; // 서버 음성이 실패하면 이 시각까지는 브라우저 음성으로 바로 간다
 const finishers = new Set<() => void>(); let audio: HTMLAudioElement | null = null;
 export function cancelSpeech(): void {
@@ -59,6 +65,7 @@ export function speak(text: string, role: Role = "q"): Promise<void> {
       return;
     }
     if (provider === "server") return browserSpeak(); // 서버 음성이 최근 실패했으면 60초간 바로 브라우저 음성(info 는 실패 때 이미 기록됨)
+    info = "브라우저 음성";
     try {
       const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v;
       u.onend = finish; u.onerror = finish;

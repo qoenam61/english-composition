@@ -61,5 +61,5 @@ Kokoro 서버는 이 컴퓨터에 설치돼 있지 않다(설치·실음성 확�
 ## 5. Kokoro 설치 현황 (2026-11-20)
 - 위치 `~/kokoro-tts`(독립 파이썬 3.12 환경, Docker·이 리포와 분리). 서버 코드 사본: `docs/kokoro-server.py`. `127.0.0.1:8880`에만 열림.
 - 로그인 시 자동 시작: launchd `com.kokoro.tts`(`~/Library/LaunchAgents/com.kokoro.tts.plist`). 끄기: `launchctl bootout gui/$(id -u)/com.kokoro.tts` 후 plist 삭제, 폴더 삭제로 완전 제거.
-- 응답 형식은 wav. 문장당 약 0.5~0.9초(CPU). 질문 `af_heart`(여성), 답변 `am_adam`(남성).
+- 응답 형식은 wav. 문장당 약 0.5~0.9초(CPU). 질문 `af_heart`(여성), 답변 `am_michael`(남성, `TTS_VOICE_A`로 변경. 후보: am_adam·am_eric·am_liam·am_onyx).
 - 앱 서버는 시작 후 30초 간격으로 Kokoro 생존을 확인하고, 꺼져 있으면 브라우저 음성으로 대신한다.

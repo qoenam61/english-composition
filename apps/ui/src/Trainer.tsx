@@ -86,7 +86,13 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
   const readQuestion = () => { // 입력창 포커스(또는 다시 듣기 버튼)에서 호출: 질문을 한 번 읽고 끝나면 카운트다운 시작
     const p = pending.current; if (!p || p.id !== loadId.current) return;
     pending.current = null; setWaiting(false); setSpeaking(true);
-    void speak(p.q).then(() => { if (p.id === loadId.current) setSpeaking(false); p.start(); });
+    const t0 = Date.now();
+    void speak(p.q).then(() => {
+      if (p.id !== loadId.current) return;
+      setSpeaking(false);
+      if (Date.now() - t0 < 500) { pending.current = p; setWaiting(true); return; } // 바로 끝났다 = 소리가 막힌 것: 화면을 누르면 다시 읽도록 대기 상태로 되돌린다(카운트다운은 읽은 뒤에 시작)
+      p.start();
+    });
   };
   const replay = () => { const q = speakable(card?.context); if (!q) return; cancelSpeech(); setSpeaking(true); const t0 = Date.now(); void speak(q).then(() => { setSpeaking(false); if (Date.now() - t0 < 400) toast("음성이 재생되지 않았어요. 무음 모드·미디어 볼륨·브라우저의 영어 음성 설치를 확인해 주세요", "warn"); }); };
   const toggleTts = () => { const on = !tts; setTts(on); setTtsEnabled(on); if (!on) { setSpeaking(false); if (pending.current) { const p = pending.current; pending.current = null; setWaiting(false); p.start(); } } } // OFF 면 재생 중 음성 중단, 대기 중이던 카운트다운은 즉시 시작; // OFF 면 재생 중인 음성도 즉시 중단
@@ -153,7 +159,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
               {tts && ttsSupported() && !res && <button type="button" onClick={() => { unlockAudio(); if (pending.current) readQuestion(); else replay(); }} aria-label="질문 듣기" className="shrink-0 w-9 h-9 rounded-full bg-surface border-b-2 border-app text-base">🔊</button>}
             </div>
           )}
-          {tts && waiting && !res && <div className="mb-2 text-xs font-bold text-sky">잠시 뒤 질문을 읽어 드려요 (입력창을 누르면 바로 읽고, 읽은 뒤에 카운트다운이 시작돼요)</div>}
+          {tts && waiting && !res && <div className="mb-2 text-xs font-bold text-sky">질문을 읽어 드려요. 소리가 안 나면 입력창이나 🔊 버튼을 눌러 주세요 (읽은 뒤에 카운트다운이 시작돼요)</div>}
           <div className="text-xs font-bold text-t3 mb-1.5">내가 하고 싶은 말</div>
           <Card className="px-4 py-4 mb-3 text-left"><p className="text-lg md:text-xl font-bold text-t1 leading-snug">{card.ko}</p></Card>
 
