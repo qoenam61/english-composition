@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Overview } from "./api";
-import { AccountButton } from "./Account";
+import { AccountButton, LoginScreen, useWho } from "./Account";
 import { Completed, WrongNotes } from "./Notes";
 import { Practice } from "./Practice";
 import { Roadmap } from "./Roadmap";
@@ -62,4 +62,9 @@ function Shell() {
     </div>
   );
 }
-export default function App() { return <ToastHost><Shell /></ToastHost>; }
+export default function App() {
+  const who = useWho();
+  if (!who) return null;
+  if (who.required && !who.authed) return <LoginScreen who={who} failed={location.search.includes("login=failed")} />;
+  return <ToastHost><Shell /></ToastHost>;
+}

@@ -2,10 +2,30 @@ import { useEffect, useState } from "react";
 import { AdminPanel } from "./Admin";
 import { Btn, Card, Modal } from "./ui";
 
-interface Who { admin?: boolean; ip: string; account: string; owner: boolean; loggedIn: boolean; loginMethod: string | null; sessionAccount: string | null; providers: Array<{ name: string; label: string }> }
+interface Who { admin?: boolean; required?: boolean; authed?: boolean; ip: string; account: string; owner: boolean; loggedIn: boolean; loginMethod: string | null; sessionAccount: string | null; providers: Array<{ name: string; label: string }> }
 const METHOD: Record<string, string> = { guest: "이 기기 전용 계정", google: "Google", kakao: "카카오", naver: "네이버", github: "GitHub", discord: "Discord", microsoft: "Microsoft", facebook: "Facebook" };
 
 /** 계정 메뉴: 소셜 로그인(키가 설정된 제공사만), 이 기기 전용 계정, 로그아웃. 로그인하지 않으면 접속 IP 기준 계정으로 쓴다. */
+/** 로그인 필수일 때 로그인 전에 보이는 첫 화면. */
+export function LoginScreen({ who, failed }: { who: Who | null; failed: boolean }) {
+  return (
+    <div className="min-h-[100dvh] bg-app grid place-items-center p-4">
+      <Card className="w-full max-w-sm p-6 grid gap-3 text-left">
+        <div className="font-black text-t1 text-2xl">패턴 영작</div>
+        <p className="text-sm text-t3">로그인하면 내 학습 기록이 계정에 저장돼요. 이름이나 이메일은 저장하지 않아요.</p>
+        {failed && <div className="rounded-xl bg-red/10 border border-red/40 text-red px-3 py-2 text-sm font-bold">로그인하지 못했어요. 다시 시도해 주세요.</div>}
+        {who?.providers.map((p) => <a key={p.name} href={`/auth/${p.name}/start`} className="block text-center rounded-xl bg-card border-2 border-cardb text-t1 font-bold py-3">{p.label}로 계속하기</a>)}
+        {who && who.providers.length === 0 && <p className="text-sm text-t3">로그인 방법이 아직 설정되지 않았어요. 관리자에게 문의해 주세요.</p>}
+      </Card>
+    </div>
+  );
+}
+export type { Who };
+export function useWho() {
+  const [who, setWho] = useState<Who | null>(null);
+  useEffect(() => { void fetch("/api/whoami").then((r) => r.json() as Promise<Who>).then(setWho).catch(() => {}); }, []);
+  return who;
+}
 export function AccountButton() {
   const [open, setOpen] = useState(false); const [who, setWho] = useState<Who | null>(null); const [failed, setFailed] = useState(() => location.search.includes("login=failed"));
   const load = () => void fetch("/api/whoami").then((r) => r.json() as Promise<Who>).then(setWho).catch(() => {});
@@ -22,7 +42,7 @@ export function AccountButton() {
           {failed && <div className="rounded-xl bg-red/10 border border-red/40 text-red px-3 py-2 text-sm font-bold">로그인하지 못했어요. 다시 시도해 주세요.</div>}
           <p className="text-sm text-t3">{who?.loggedIn ? `현재 ${METHOD[who.loginMethod ?? ""] ?? "로그인"} 계정으로 쓰는 중이에요.` : who?.owner ? "이 접속은 기존 학습 기록에 연결돼 있어요." : "로그인하지 않으면 접속한 네트워크(IP)로 기록을 구분해요. 네트워크가 바뀌면 기록이 다르게 보일 수 있어요."}</p>
           {who && !who.loggedIn && who.providers.map((p) => <a key={p.name} href={`/auth/${p.name}/start`} className="block text-center rounded-xl bg-card border-2 border-cardb text-t1 font-bold py-3">{p.label}로 계속하기</a>)}
-          {who && !who.loggedIn && <Btn tone="sky" onClick={() => void post("/auth/guest")}>이 기기 전용 계정 만들기</Btn>}
+          {who && !who.loggedIn && !who.required && <Btn tone="sky" onClick={() => void post("/auth/guest")}>이 기기 전용 계정 만들기</Btn>}
           {who && !who.loggedIn && who.providers.length === 0 && <p className="text-xs text-t3">소셜 로그인은 아직 설정되지 않았어요.</p>}
           {who?.loggedIn && <Btn tone="red" onClick={() => void post("/auth/logout")}>로그아웃</Btn>}
           {who?.admin && <AdminPanel />}

@@ -86,7 +86,17 @@ function loadSessionSecret(): string {
   mkdirSync(root + "data", { recursive: true }); const v = randomBytes(32).toString("hex"); writeFileSync(f, v, { mode: 0o600 }); return v;
 }
 const sessionSecret = loadSessionSecret();
+// 로그인한 계정 목록과 관리자 지정(data/accounts.json, data/admins.json). 소셜 제공사의 이름·이메일은 저장하지 않는다.
+const accFile = root + "data/accounts.json", admFile = root + "data/admins.json";
+const readJson = <T,>(f: string, d: T): T => { try { return JSON.parse(readFileSync(f, "utf8")) as T; } catch { return d; } };
+const accounts: Record<string, { provider: string; firstAt: number; lastAt: number }> = readJson(accFile, {});
+const savedAdmins = new Set<string>(readJson<string[]>(admFile, []));
+const isAdminAccount = (id: string) => ownerAccounts.has(id) || savedAdmins.has(id);
+const saveJson = (f: string, v: unknown) => { mkdirSync(root + "data", { recursive: true }); writeFileSync(f, JSON.stringify(v), { mode: 0o600 }); };
+const noteLogin = (id: string, provider: string) => { const t = Date.now(); accounts[id] = { provider, firstAt: accounts[id]?.firstAt ?? t, lastAt: t }; saveJson(accFile, accounts); };
 const SESSION_DAYS = 30;
+// 로그인 필수(기본 켬): 소셜 로그인한 사람과 이 컴퓨터 직접 접속만 API 를 쓸 수 있다. 끄려면 LOGIN_REQUIRED=0 (그때만 게스트·IP 계정 허용).
+const loginRequired = process.env.LOGIN_REQUIRED !== "0";
 const redirect = (res: any, to: string, cookies: string[] = []) => { res.writeHead(302, { location: to, "set-cookie": cookies, "cache-control": "no-store" }); res.end(); };
 const startSession = (u: string, p: string) => cookieHeader("epa_s", signSession(sessionSecret, { u, p, exp: Date.now() + SESSION_DAYS * 86400_000 }), { maxAge: SESSION_DAYS * 86400, secure: secureCookies });
 const clearCookie = (n: string) => cookieHeader(n, "", { maxAge: 0, secure: secureCookies });
@@ -94,7 +104,8 @@ const clearCookie = (n: string) => cookieHeader(n, "", { maxAge: 0, secure: secu
 async function handleAuth(req: any, res: any, url: URL): Promise<void> {
   const parts = url.pathname.split("/").filter(Boolean); // ["auth", "<제공사|guest|logout>", "start|callback"]
   const seg = parts[1] ?? "";
-  if (req.method === "POST" && seg === "guest") { res.writeHead(200, { "content-type": "application/json", "set-cookie": startSession("g-" + randomBytes(8).toString("hex"), "guest") }); res.end('{"ok":true}'); return; }
+  if (req.method === "POST" && seg === "guest") {
+    if (loginRequired) { res.writeHead(403, { "content-type": "application/json" }); res.end('{"error":"login required"}'); return; } res.writeHead(200, { "content-type": "application/json", "set-cookie": startSession("g-" + randomBytes(8).toString("hex"), "guest") }); res.end('{"ok":true}'); return; }
   if (req.method === "POST" && seg === "logout") { res.writeHead(200, { "content-type": "application/json", "set-cookie": clearCookie("epa_s") }); res.end('{"ok":true}'); return; }
   const p = loginProviders.find((x) => x.name === seg);
   if (!p || req.method !== "GET") return redirect(res, "/?login=failed");
@@ -108,7 +119,8 @@ async function handleAuth(req: any, res: any, url: URL): Promise<void> {
     if (url.searchParams.get("error") || !code || !sameState(c.epa_st, url.searchParams.get("state"))) return redirect(res, "/?login=failed", wipe);
     try {
       const sub = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
-      return redirect(res, "/", [...wipe, startSession(accountId(p.name, sub), p.name)]);
+      const acc = accountId(p.name, sub); noteLogin(acc, p.name);
+      return redirect(res, "/", [...wipe, startSession(acc, p.name)]);
     } catch (e) { console.error("로그인 실패:", p.name, e instanceof Error ? e.message : "unknown"); return redirect(res, "/?login=failed", wipe); }
   }
   return redirect(res, "/?login=failed");
@@ -148,11 +160,24 @@ createServer(async (req, res) => {
     const sess = verifySession(sessionSecret, parseCookies(req.headers.cookie).epa_s, Date.now());
     const userId = sess ? (ownerAccounts.has(sess.u) ? "me" : sess.u) : who.userId;
     // 관리자: 이 컴퓨터에서 직접 연 접속, 또는 OWNER_ACCOUNTS 에 적은 로그인 계정. (IP 는 공유될 수 있어 관리자 근거로 쓰지 않는다)
-    const isAdmin = (!sess && who.local) || (!!sess && ownerAccounts.has(sess.u));
+    const authed = !!sess || who.local;
+    if (loginRequired && !authed && url.pathname.startsWith("/api/") && url.pathname !== "/api/whoami") return json(res, 401, { error: "login required" });
+    const isAdmin = (!sess && who.local) || (!!sess && isAdminAccount(sess.u));
     if (url.pathname === "/api/admin/users") {
       if (!isAdmin) return json(res, 403, { error: "forbidden" });
       const label = (id: string) => (id === "me" ? "기존 기록(me)" : id.startsWith("u-") ? "소셜 로그인" : id.startsWith("g-") ? "게스트" : "IP 계정");
-      return json(res, 200, { users: store.adminSummary().map((u) => ({ ...u, kind: label(u.userId) })) });
+      const sum = new Map(store.adminSummary().map((u) => [u.userId, u]));
+      const ids = new Set([...sum.keys(), ...Object.keys(accounts)]);
+      const list = [...ids].map((id) => { const u = sum.get(id); const a = accounts[id];
+        return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), admin: isAdminAccount(id), fixedAdmin: ownerAccounts.has(id) }; });
+      return json(res, 200, { users: list.sort((x, y) => y.lastAt - x.lastAt) });
+    }
+    if (url.pathname === "/api/admin/promote" && req.method === "POST") {
+      if (!isAdmin) return json(res, 403, { error: "forbidden" });
+      const q = new URL(req.url ?? "", "http://x").searchParams; const id = q.get("id") ?? "";
+      if (!accounts[id]) return json(res, 400, { error: "unknown account" });
+      if (q.get("on") === "1") savedAdmins.add(id); else savedAdmins.delete(id);
+      saveJson(admFile, [...savedAdmins]); return json(res, 200, { ok: true });
     }
     if (url.pathname === "/api/admin/delete" && req.method === "POST") {
       if (!isAdmin) return json(res, 403, { error: "forbidden" });
@@ -160,7 +185,7 @@ createServer(async (req, res) => {
       if (!id || id === "me") return json(res, 400, { error: "cannot delete" });
       store.deleteUser(id); users.delete(id); return json(res, 200, { ok: true });
     }
-    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: loginProviders.map((x) => ({ name: x.name, label: x.label })) });
+    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, required: loginRequired, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: loginProviders.map((x) => ({ name: x.name, label: x.label })) });
     const ent = entryFor(userId); const study = ent.study;
     if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
