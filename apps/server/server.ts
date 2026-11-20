@@ -185,7 +185,7 @@ createServer(async (req, res) => {
       if (!id || id === "me") return json(res, 400, { error: "cannot delete" });
       store.deleteUser(id); users.delete(id); return json(res, 200, { ok: true });
     }
-    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, required: loginRequired, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: loginProviders.map((x) => ({ name: x.name, label: x.label })) });
+    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, required: loginRequired, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: PROVIDERS.map((x) => ({ name: x.name, label: x.label, enabled: loginProviders.some((y) => y.name === x.name) })) });
     const ent = entryFor(userId); const study = ent.study;
     if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
