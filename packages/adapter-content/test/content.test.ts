@@ -18,16 +18,20 @@ describe.skipIf(!existsSync(PACK))("pack-personal 통합", () => {
       for (const id of c.patternIds) expect((await repo.sentences(id, ["original", "own"])).length).toBeGreaterThan(0);
     }
   });
-  it("상황별 로드맵은 패턴 로드맵과 ID가 겹치지 않고 문장이 있다", async () => {
+  it("장소 로드맵 = 어휘 문장(새 id) + 패턴 로드맵의 패턴(같은 id 공유). 패턴은 장소 한 곳에만, 챕터는 40개 이하", async () => {
     const maps = await repo.roadmaps!();
     expect(maps[0]).toEqual({ id: "pattern", label: "패턴 학습 로드맵" }); expect(maps.length).toBe(10);
     const patternIds = new Set((await repo.chapters()).flatMap((c) => c.patternIds));
-    let total = 250;
+    const placed = new Map<number, string>(); let total = 250;
     for (const m of maps.slice(1)) {
       const cs = await repo.chapters(m.id); total += cs.length; expect(cs.length).toBeGreaterThan(0);
-      for (const c of cs) { expect(c.roadmap).toBe(m.id); for (const id of c.patternIds) expect(patternIds.has(id)).toBe(false); }
-      const first = cs[0]!.patternIds[0]!; expect((await repo.sentences(first, ["original"])).length).toBe(1);
+      for (const c of cs) {
+        expect(c.roadmap).toBe(m.id); expect(c.patternIds.length).toBeLessThanOrEqual(40);
+        for (const id of c.patternIds) { expect(placed.has(id)).toBe(false); placed.set(id, m.id); if (!patternIds.has(id)) expect(id).toBeGreaterThanOrEqual(100000); }
+      }
+      const first = cs[0]!.patternIds[0]!; expect((await repo.sentences(first, ["original"])).length).toBeGreaterThanOrEqual(1);
     }
+    for (const id of patternIds) expect(placed.has(id)).toBe(true); // 패턴 로드맵의 모든 패턴이 장소 한 곳에도 들어 있다
     expect((await repo.chapters("*")).length).toBe(total);
   });
   it("첫 챕터를 정답 입력으로 끝까지 완주한다(실데이터)", async () => {

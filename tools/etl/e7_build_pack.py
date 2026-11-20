@@ -67,10 +67,25 @@ o.executemany("INSERT INTO chapter(chapter_id, level, n_patterns) VALUES (?,?,?)
 spec9 = importlib.util.spec_from_file_location("e9", ROOT / "tools" / "etl" / "e9_lexical_chapters.py")
 e9 = importlib.util.module_from_spec(spec9); spec9.loader.exec_module(e9)
 print("상황별 로드맵:", e9.append(s, o))
+# 검증: 모든 패턴은 패턴 로드맵 1회 + 장소 로드맵 정확히 1회, 어휘 문장은 장소 1회, 챕터 ≤ 40, 챕터 안 레벨은 오름차순
+live_ids = {r[0] for r in live}
+cnt = {}
+for pid, rm in o.execute("SELECT cp.pattern_id, c.roadmap FROM chapter_pattern cp JOIN chapter c USING(chapter_id)"):
+    cnt.setdefault(pid, []).append(rm)
+bad_pat = [p for p in live_ids if sorted(x == "pattern" for x in cnt.get(p, [])) != [False, True]]
+bad_lex = [p for p in cnt if p not in live_ids and len(cnt[p]) != 1]
+big = o.execute("SELECT COUNT(*) FROM chapter WHERE roadmap!='pattern' AND n_patterns>40").fetchone()[0]
+lv = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}; inv = 0
+for (rm,) in o.execute("SELECT DISTINCT roadmap FROM chapter").fetchall():
+    last = 0
+    for (l,) in o.execute("SELECT level FROM chapter WHERE roadmap=? ORDER BY chapter_id", (rm,)):
+        inv += lv[l] < last; last = lv[l]
+print("배치 검증:", {"패턴 배치 오류": len(bad_pat), "어휘 문장 중복": len(bad_lex), "40개 초과 챕터": big, "레벨 역전": inv})
+if bad_pat or bad_lex or big or inv: raise SystemExit("팩 검증 실패")
 h = hashlib.sha256()
 for t in ("pattern", "sentence", "sentence_answer", "chapter", "chapter_pattern", "roadmap"):
     for r in o.execute(f"SELECT * FROM {t} ORDER BY 1,2"): h.update(repr(r).encode())
-o.execute("INSERT INTO pack_manifest VALUES ('pack-personal','0.4.0','original,own','2026-11-20',?)", (h.hexdigest(),))
+o.execute("INSERT INTO pack_manifest VALUES ('pack-personal','0.5.0','original,own','2026-11-20',?)", (h.hexdigest(),))
 o.commit()
 print("must_use 비움:", o.execute("SELECT COUNT(*) FROM sentence WHERE must_use IS NULL").fetchone()[0])
 for t in ("pattern", "sentence", "chapter", "chapter_pattern"):

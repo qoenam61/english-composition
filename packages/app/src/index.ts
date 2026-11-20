@@ -3,7 +3,7 @@ import { GradingService, GRADER_VERSION } from "@app/grading";
 import { Session } from "@app/session";
 import { summarize } from "@app/stats";
 import { classifyError, emptyNotes, onAttemptGraded, onPatternCompleted, onPatternUncompleted, sortedWrong, type NotesState } from "@app/notes";
-import { nextDue, type ChapterBoard, type PatternProgress } from "@app/domain";
+import { chapterStatuses, computeUserLevel, levelOf, nextDue, tierOf, type ChapterBoard, type ChapterStatus, type LevelRoadmap, type PatternProgress } from "@app/domain";
 
 export interface CardView {
   sentenceId: number; patternId: number; ko: string; context?: string; review: boolean;
@@ -21,8 +21,11 @@ export function timeLimitSec(en: string): number {
   return n <= 6 ? 45 : n >= 12 ? 90 : 60;
 }
 
+/** 잠긴 챕터를 열려 했다. */
+export class ChapterLockedError extends Error { constructor(public chapterId: number) { super("locked chapter " + chapterId); } }
+
 export interface StudyDeps {
-  userId: string; content: ContentRepository; store: UserStore & { saveSchedule(u: string, p: number, box: number, due: number): Promise<void>; scheduleOf(u: string, p: number): Promise<{ box: number; dueAt: number } | undefined> };
+  userId: string; content: ContentRepository; store: UserStore & { userLevel(u: string): Promise<number>; saveUserLevel(u: string, rank: number): Promise<void>; saveSchedule(u: string, p: number, box: number, due: number): Promise<void>; scheduleOf(u: string, p: number): Promise<{ box: number; dueAt: number } | undefined> };
   grading: GradingService; rng: () => number; now: () => number; tracks: ReadonlyArray<"original" | "own">; bus?: (e: AppEvent) => void;
 }
 
@@ -40,13 +43,37 @@ export class StudyService {
 
   constructor(private d: StudyDeps) {}
 
-  /** 아직 끝나지 않은 첫 챕터를 열어 이어하기 한다. */
-  async open(chapterId?: number, roadmap?: string): Promise<ChapterBoard> {
+  private roadmapCache?: LevelRoadmap[];
+  /** 모든 로드맵의 챕터(레벨 해금 계산용). 팩은 실행 중 바뀌지 않으므로 한 번만 읽는다. */
+  private async allRoadmaps(): Promise<LevelRoadmap[]> {
+    if (this.roadmapCache) return this.roadmapCache;
+    const ids = ((await this.d.content.roadmaps?.()) ?? [{ id: "pattern", label: "" }]).map((r) => r.id);
+    this.roadmapCache = await Promise.all(ids.map(async (id) => ({ id, chapters: await this.d.content.chapters(id) })));
+    return this.roadmapCache;
+  }
+  /** 사용자 레벨(저장된 최고 레벨과 이번 진행도 중 큰 값). 올랐으면 저장한다(내려가지 않는다). */
+  private async levelRank(prog: Map<number, PatternProgress>): Promise<number> {
+    const stored = await this.d.store.userLevel(this.d.userId);
+    const u = computeUserLevel(await this.allRoadmaps(), (id) => prog.get(id)?.state === "done", stored);
+    if (u > stored) await this.d.store.saveUserLevel(this.d.userId, u);
+    return u;
+  }
+  private statusesOf(chapters: ChapterRef[], prog: Map<number, PatternProgress>, u: number): ChapterStatus[] {
+    return chapterStatuses(chapters, (id) => prog.get(id)?.state === "done", u);
+  }
+
+  /** 이어하기 대상 챕터를 열거나(생략 시) 지정한 챕터를 연다. 잠긴 챕터는 `ChapterLockedError`. force=완료 취소 등 내부용. */
+  async open(chapterId?: number, roadmap?: string, force = false): Promise<ChapterBoard> {
+    if (chapterId === undefined && roadmap === undefined) roadmap = this.chapter?.roadmap; // "다음 챕터"는 지금 공부하던 로드맵 안에서 이어간다
     const all = await this.d.content.chapters(chapterId !== undefined ? "*" : roadmap); // 챕터 ID는 로드맵 전체에서 유일하다
     this.practice = undefined;
     this.progress = await this.d.store.progress(this.d.userId);
-    const isDone = (c: ChapterRef) => c.patternIds.every((id) => this.progress.get(id)?.state === "done");
-    this.chapter = (chapterId !== undefined ? all.find((c) => c.chapterId === chapterId) : all.find((c) => !isDone(c))) ?? all[all.length - 1]!;
+    const u = await this.levelRank(this.progress);
+    const target = chapterId !== undefined ? all.find((c) => c.chapterId === chapterId) : undefined;
+    const scope = target ? all.filter((c) => (c.roadmap ?? "pattern") === (target.roadmap ?? "pattern")) : all;
+    const sts = this.statusesOf(scope, this.progress, u);
+    if (target && !force && sts[scope.indexOf(target)] === "locked") throw new ChapterLockedError(target.chapterId);
+    this.chapter = target ?? scope[Math.max(0, sts.indexOf("current"))] ?? scope[scope.length - 1]!;
     this.chapterNo = all.filter((c) => (c.roadmap ?? "pattern") === (this.chapter!.roadmap ?? "pattern")).findIndex((c) => c.chapterId === this.chapter!.chapterId) + 1;
     const byPattern = new Map<number, number[]>(); this.sentences.clear();
     this.templates.clear();
@@ -170,27 +197,43 @@ export class StudyService {
     return { kind: "graded", verdict: r.verdict, counted: r.verdict === "PASS", by: r.by, comment: "comment" in r ? r.comment : undefined, answer: s.answers[0] ?? s.en, patternCompleted: false, chapterCompleted: false, board: this.practiceBoard() };
   }
 
-  /** 로드맵: 챕터별 진행 상태. 잠금 = 처음 미완료 챕터 이후. */
+  /** 로드맵: 챕터별 진행 상태. 열림 = 사용자 레벨 이하 또는 그 로드맵의 다음 단계 첫 미완료 챕터(docs/level-unlock-plan.md). */
   async overview(roadmap = "pattern") {
     const all = await this.d.content.chapters(roadmap);
     const roadmaps = (await this.d.content.roadmaps?.()) ?? [{ id: "pattern", label: "패턴 학습 로드맵" }]; const prog = await this.d.store.progress(this.d.userId);
-    await this.rebuildNotes();
+    await this.rebuildNotes(); const u = await this.levelRank(prog); const sts = this.statusesOf(all, prog, u);
     const rows = all.map((c) => { const done = c.patternIds.filter((id) => prog.get(id)?.state === "done").length; return { chapterId: c.chapterId, level: c.level, total: c.patternIds.length, done }; });
-    const cur = rows.findIndex((r) => r.done < r.total);
-    const chapters = rows.map((r, i) => ({ ...r, no: i + 1, status: r.done >= r.total ? "done" as const : i === cur ? "current" as const : "locked" as const }));
+    const chapters = rows.map((r, i) => ({ ...r, no: i + 1, status: sts[i]! }));
+    const cur = sts.indexOf("current");
     const st = await this.statsView();
-    return { roadmap, roadmaps, chapters, currentChapterId: cur < 0 ? undefined : rows[cur]!.chapterId, activeChapterId: this.chapter?.chapterId, header: { streakDays: st.streakDays, mastered: this.notes.completed.size, wrongCount: this.notes.wrong.size }, totalPatterns: rows.reduce((a, r) => a + r.total, 0), totalDone: rows.reduce((a, r) => a + r.done, 0) };
+    return { roadmap, roadmaps, chapters, userLevel: levelOf(u) ?? null, currentChapterId: cur < 0 ? undefined : rows[cur]!.chapterId, activeChapterId: this.chapter?.chapterId, header: { streakDays: st.streakDays, mastered: this.notes.completed.size, wrongCount: this.notes.wrong.size }, totalPatterns: rows.reduce((a, r) => a + r.total, 0), totalDone: rows.reduce((a, r) => a + r.done, 0) };
+  }
+
+  /** 섬 지도용 요약: 로드맵마다 난이도 3단계(입문·중급·고급)별 챕터 수·완료·열림, 현재 단계. `allowed`로 보여 줄 로드맵을 거른다. */
+  async overviewAll(allowed?: (id: string) => boolean) {
+    const prog = await this.d.store.progress(this.d.userId); const u = await this.levelRank(prog);
+    const labels = (await this.d.content.roadmaps?.()) ?? [{ id: "pattern", label: "패턴 학습 로드맵" }];
+    const maps = (await this.allRoadmaps()).filter((r) => !allowed || allowed(r.id));
+    const roadmaps = maps.map((r) => {
+      const sts = this.statusesOf(r.chapters, prog, u);
+      const tiers = [0, 1, 2].map((t) => { const idx = r.chapters.map((c, i) => (tierOf(c.level) === t ? i : -1)).filter((i) => i >= 0); return { total: idx.length, done: idx.filter((i) => sts[i] === "done").length, open: idx.filter((i) => sts[i] !== "locked").length }; });
+      const cur = sts.indexOf("current");
+      const patterns = new Set(r.chapters.flatMap((c) => c.patternIds));
+      return { id: r.id, label: labels.find((l) => l.id === r.id)?.label ?? r.id, tiers, chapters: r.chapters.length, patterns: patterns.size, currentChapterId: cur < 0 ? undefined : r.chapters[cur]!.chapterId, currentTier: cur < 0 ? 3 : tierOf(r.chapters[cur]!.level), currentNo: cur < 0 ? undefined : cur + 1, started: [...patterns].some((id) => prog.get(id)?.state === "done") };
+    });
+    return { userLevel: levelOf(u) ?? null, roadmaps };
   }
 
   /** 완료 취소: 연속 정답·복습 일정을 지우고 원래 챕터 대기열로 되돌린다. 열려 있던 챕터를 돌려준다. */
-  async uncomplete(patternId: number): Promise<{ chapterId: number }> {
-    const all = await this.d.content.chapters("*");
-    const ch = all.find((c) => c.patternIds.includes(patternId)); if (!ch) throw new Error("패턴을 찾을 수 없다");
+  async uncomplete(patternId: number, roadmap?: string): Promise<{ chapterId: number }> {
+    const all = await this.d.content.chapters("*"); // 같은 패턴이 패턴 로드맵과 장소 로드맵에 모두 있다 — 요청한 로드맵(없으면 패턴 로드맵)의 챕터를 우선한다
+    const hit = all.filter((c) => c.patternIds.includes(patternId));
+    const ch = hit.find((c) => (c.roadmap ?? "pattern") === (roadmap ?? "pattern")) ?? hit[0]; if (!ch) throw new Error("패턴을 찾을 수 없다");
     const prog = await this.d.store.progress(this.d.userId); const cur = prog.get(patternId);
     await this.d.store.markUndone(this.d.userId, patternId, this.d.now());
     await this.d.store.deleteSchedule(this.d.userId, patternId);
     await this.d.store.saveProgress(this.d.userId, { patternId, streak: 0, state: "learning", hintOnlyStreak: 0, consecutiveFails: 0, seenSentenceIds: cur?.seenSentenceIds ?? [] } as PatternProgress);
-    await this.open(ch.chapterId);
+    await this.open(ch.chapterId, undefined, true);
     return { chapterId: ch.chapterId };
   }
 

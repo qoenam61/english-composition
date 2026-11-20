@@ -11,7 +11,7 @@ import { SqliteUserStore } from "@app/adapter-userdb";
 import { GradingService } from "@app/grading";
 import { ChainJudge, ClaudeCliJudge, GeminiJudge, OpenAiCompatJudge } from "@app/adapter-llm";
 import type { LlmJudge } from "@app/contracts";
-import { StudyService } from "@app/app";
+import { ChapterLockedError, StudyService } from "@app/app";
 import { PROVIDERS, accountId, authorizeUrl, cookieHeader, enabledProviders, identify, newState, parseCookies, sameState, signSession, verifySession } from "./auth.js";
 import { parseOwners, userIdFor } from "./identity.js";
 
@@ -226,7 +226,16 @@ createServer(async (req, res) => {
     if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: PROVIDERS.map((x) => ({ name: x.name, label: x.label, enabled: loginProviders.some((y) => y.name === x.name) })) });
     const rmParam = (u: URL) => (isAdmin ? u.searchParams.get("roadmap") ?? undefined : "pattern"); // 비관리자는 패턴 로드맵만(상황별 주제는 own 문장이 없다)
     const ent = entryFor(userId, isAdmin); const study = ent.study;
-    if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined, rmParam(url)); ent.opened = true; }
+    if (!ent.opened || url.pathname === "/api/open") {
+      const want = url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined;
+      try { await study.open(want, rmParam(url)); }
+      catch (e) { // 잠긴 챕터: 명시 요청(/api/open)은 403, 첫 요청에 딸려 온 오래된 값은 이어하기 대상으로 대체한다
+        if (!(e instanceof ChapterLockedError)) throw e;
+        if (url.pathname === "/api/open") return json(res, 403, { error: "chapter locked" });
+        await study.open(undefined, rmParam(url));
+      }
+      ent.opened = true;
+    }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
     const anonBlocked = !authed && !ent.free; // 비로그인은 자유훈련을 시작한 뒤에만 카드·제출·힌트를 쓸 수 있다
     if (url.pathname === "/api/next") return json(res, 200, anonBlocked ? { card: null, summary: null } : { card: study.next() ?? null, summary: study.practiceSummary() ?? null });
@@ -255,8 +264,9 @@ createServer(async (req, res) => {
       }
       res.writeHead(200, { ...base, "content-length": audio.length }); return res.end(audio);
     }
+    if (url.pathname === "/api/overview-all") return authed ? json(res, 200, await study.overviewAll((id) => isAdmin || id === "pattern")) : json(res, 403, { error: "login required" });
     if (url.pathname === "/api/overview") return authed ? json(res, 200, await study.overview(rmParam(url))) : json(res, 403, { error: "login required" });
-    if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
+    if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId), typeof b.roadmap === "string" ? b.roadmap : undefined)); }
     if (url.pathname === "/api/practice/exit") { study.exitPractice(); if (!authed) ent.free = false; return json(res, 200, { ok: true }); }
     if (url.pathname === "/api/notes") return json(res, 200, await study.notesView());
     if (url.pathname === "/api/stats") return json(res, 200, await study.statsView());

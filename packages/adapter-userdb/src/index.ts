@@ -17,7 +17,7 @@ export class SqliteUserStore implements UserStore {
   }
   /** 관리자용: 한 계정의 학습 기록 전체 삭제. */
   deleteUser(userId: string): void {
-    for (const t of ["user_pattern_state", "attempt", "completion", "srs_schedule"]) this.db.prepare(`DELETE FROM ${t} WHERE user_id=?`).run(userId);
+    for (const t of ["user_pattern_state", "attempt", "completion", "srs_schedule", "user_level"]) this.db.prepare(`DELETE FROM ${t} WHERE user_id=?`).run(userId);
   }
   constructor(path = ":memory:") {
     this.db = new DatabaseSync(path);
@@ -25,10 +25,19 @@ export class SqliteUserStore implements UserStore {
       CREATE TABLE IF NOT EXISTS user_pattern_state(user_id TEXT, pattern_id INTEGER, streak INTEGER, state TEXT, hint_only_streak INTEGER, consecutive_fails INTEGER, seen TEXT, last_seen INTEGER, PRIMARY KEY(user_id, pattern_id));
       CREATE TABLE IF NOT EXISTS attempt(attempt_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, sentence_id INTEGER, pattern_id INTEGER, input_text TEXT, verdict TEXT, used_hint INTEGER, over_time INTEGER, grader_version TEXT, at INTEGER, elapsed_ms INTEGER DEFAULT 0);
       CREATE TABLE IF NOT EXISTS completion(user_id TEXT, pattern_id INTEGER, at INTEGER, undone_at INTEGER, PRIMARY KEY(user_id, pattern_id, at));
+      CREATE TABLE IF NOT EXISTS user_level(user_id TEXT PRIMARY KEY, rank INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS srs_schedule(user_id TEXT, pattern_id INTEGER, box INTEGER, due_at INTEGER, PRIMARY KEY(user_id, pattern_id));
     `);
     const cols = (this.db.prepare("PRAGMA table_info(completion)").all() as any[]).map((c) => c.name);
     if (!cols.includes("undone_at")) this.db.exec("ALTER TABLE completion ADD COLUMN undone_at INTEGER");
+  }
+
+  /** 사용자 레벨(A1=1 … C2=6) 최고 기록. 오르기만 한다. */
+  async userLevel(userId: string): Promise<number> {
+    return (this.db.prepare("SELECT rank FROM user_level WHERE user_id=?").get(userId) as { rank: number } | undefined)?.rank ?? 0;
+  }
+  async saveUserLevel(userId: string, rank: number): Promise<void> {
+    this.db.prepare("INSERT INTO user_level(user_id, rank) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET rank=MAX(rank, excluded.rank)").run(userId, rank);
   }
 
   async progress(userId: string): Promise<Map<number, PatternProgress>> {
