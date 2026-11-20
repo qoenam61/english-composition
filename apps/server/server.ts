@@ -87,7 +87,11 @@ const owners = parseOwners(process.env.OWNER_IPS);
 const publicBase = (process.env.PUBLIC_BASE_URL ?? "").replace(/\/$/, "");
 const secureCookies = publicBase.startsWith("https://");
 const loginProviders = enabledProviders(process.env);
-const ownerAccounts = new Set((process.env.OWNER_ACCOUNTS ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+// ADMIN_EMAIL: 구글이 "검증된 이메일"로 확인해 준 계정이 이 주소와 같으면 관리자(+기존 기록 me 연결). 이메일은 비교에만 쓰고 저장하지 않으며, 계정 ID만 data/owners.json 에 남긴다.
+const adminEmails = new Set((process.env.ADMIN_EMAIL ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
+const ownersFile = root + "data/owners.json";
+const ownerAccounts = new Set([...(process.env.OWNER_ACCOUNTS ?? "").split(",").map((x) => x.trim()).filter(Boolean), ...readJsonSafe<string[]>(ownersFile, [])]);
+function readJsonSafe<T>(f: string, d: T): T { try { return JSON.parse(readFileSync(f, "utf8")) as T; } catch { return d; } }
 function loadSessionSecret(): string {
   if ((process.env.SESSION_SECRET ?? "").length >= 16) return process.env.SESSION_SECRET!;
   const f = root + "data/session-secret";
@@ -124,21 +128,24 @@ async function handleAuth(req: any, res: any, url: URL): Promise<void> {
     const code = url.searchParams.get("code");
     if (url.searchParams.get("error") || !code || !sameState(c.epa_st, url.searchParams.get("state"))) return redirect(res, "/?login=failed", wipe);
     try {
-      const sub = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
-      const acc = accountId(p.name, sub); noteLogin(acc, p.name);
+      const who = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
+      const acc = accountId(p.name, who.id); noteLogin(acc, p.name);
+      if (p.name === "google" && who.email && adminEmails.has(who.email) && !ownerAccounts.has(acc)) { ownerAccounts.add(acc); mkdirSync(root + "data", { recursive: true }); writeFileSync(ownersFile, JSON.stringify([...ownerAccounts].filter(validAccount)), { mode: 0o600 }); }
       return redirect(res, "/", [...wipe, startSession(acc, p.name)]);
     } catch (e) { console.error("로그인 실패:", p.name, e instanceof Error ? e.message : "unknown"); return redirect(res, "/?login=failed", wipe); }
   }
   return redirect(res, "/?login=failed");
 }
 const MAX_USERS = 300; // 메모리에 올려 두는 계정 수 상한(넘으면 가장 오래 안 쓴 것부터 내린다. 기록은 DB에 남아 있다)
-const users = new Map<string, { study: StudyService; opened: boolean; free: boolean; store: SqliteUserStore }>();
+const users = new Map<string, { study: StudyService; opened: boolean; free: boolean; store: SqliteUserStore; admin: boolean }>();
 const release = (e: { store: SqliteUserStore }) => { if (e.store !== meStore) e.store.close(); };
-function entryFor(userId: string) {
+// 원본(구매한 Sentence Kit) 문장은 관리자에게만 보인다. 그 외에는 공개용("own") 트랙만 쓴다 — 서버에서 강제한다.
+function entryFor(userId: string, admin: boolean) {
   let e = users.get(userId);
+  if (e && e.admin !== admin) { release(e); users.delete(userId); e = undefined; } // 권한이 바뀌면 새로 만든다
   if (e) { users.delete(userId); users.set(userId, e); return e; } // 최근 사용 순서로 갱신
   const st = storeFor(userId);
-  e = { study: new StudyService({ userId, content, store: st, grading, rng: Math.random, now: Date.now, tracks: ["original", "own"] }), opened: false, free: false, store: st };
+  e = { study: new StudyService({ userId, content, store: st, grading, rng: Math.random, now: Date.now, tracks: admin ? ["original", "own"] : ["own"] }), opened: false, free: false, store: st, admin };
   users.set(userId, e);
   if (users.size > MAX_USERS) { const k = users.keys().next().value!; release(users.get(k)!); users.delete(k); }
   return e;
@@ -211,7 +218,7 @@ createServer(async (req, res) => {
       deleteAccount(sess.u); res.setHeader("set-cookie", clearCookie("epa_s")); return json(res, 200, { ok: true });
     }
     if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: PROVIDERS.map((x) => ({ name: x.name, label: x.label, enabled: loginProviders.some((y) => y.name === x.name) })) });
-    const ent = entryFor(userId); const study = ent.study;
+    const ent = entryFor(userId, isAdmin); const study = ent.study;
     if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
     const anonBlocked = !authed && !ent.free; // 비로그인은 자유훈련을 시작한 뒤에만 카드·제출·힌트를 쓸 수 있다
@@ -223,6 +230,7 @@ createServer(async (req, res) => {
       if (!authed && k !== "free") return json(res, 401, { error: "login required" });
       const r = k === "weak" || k === "free" ? await study.startPractice(k, opts) : { ok: false, reason: "알 수 없는 훈련" };
       if (!authed) ent.free = !!(r as { ok?: boolean }).ok;
+      if (!isAdmin && (r as { ok?: boolean }).ok === false) return json(res, 200, { ok: false, reason: "공개용 콘텐츠를 준비 중이에요. 곧 열릴 예정이에요." });
       return json(res, 200, r);
     }
     if (url.pathname === "/api/config") return json(res, 200, { tts: (await ttsServerUp()) ? "server" : "browser" });
@@ -239,7 +247,7 @@ createServer(async (req, res) => {
       }
       res.writeHead(200, { ...base, "content-length": audio.length }); return res.end(audio);
     }
-    if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
+    if (url.pathname === "/api/overview") return isAdmin ? json(res, 200, await study.overview()) : json(res, 403, { error: "content pending" }); // 챕터 구성은 원본 책의 구조라 관리자에게만 보인다
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
     if (url.pathname === "/api/practice/exit") { study.exitPractice(); if (!authed) ent.free = false; return json(res, 200, { ok: true }); }
     if (url.pathname === "/api/notes") return json(res, 200, await study.notesView());

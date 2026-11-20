@@ -28,6 +28,17 @@ export function LockedView({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+/** 원본 콘텐츠는 관리자에게만 보인다. 공개용 콘텐츠가 열리기 전의 안내. */
+export function ContentPending() {
+  return (
+    <div className="max-w-md mx-auto p-6 grid gap-3 text-center">
+      <div className="text-4xl">🛠️</div>
+      <div className="font-black text-t1 text-lg">공개용 콘텐츠를 준비 중이에요</div>
+      <p className="text-sm text-t3">곧 열릴 예정이에요. 조금만 기다려 주세요.</p>
+    </div>
+  );
+}
+
 /** 우측 상단 계정 버튼과 계정 창. 로그인은 이 버튼을 눌렀을 때만 시작한다. */
 export function AccountButton({ who, open, setOpen }: { who: Who | null; open: boolean; setOpen: (v: boolean) => void }) {
   const [failed, setFailed] = useState(() => location.search.includes("login=failed")); const [armed, setArmed] = useState(false);
