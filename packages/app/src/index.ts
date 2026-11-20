@@ -22,6 +22,8 @@ export function timeLimitSec(en: string): number {
 }
 
 /** 잠긴 챕터를 열려 했다. */
+/** 열 수 있는 챕터가 하나도 없다(아직 준비된 문장이 없음). */
+export class NoContentError extends Error { constructor() { super("no content"); } }
 export class ChapterLockedError extends Error { constructor(public chapterId: number) { super("locked chapter " + chapterId); } }
 
 export interface StudyDeps {
@@ -73,6 +75,7 @@ export class StudyService {
     const scope = target ? all.filter((c) => (c.roadmap ?? "pattern") === (target.roadmap ?? "pattern")) : all;
     const sts = this.statusesOf(scope, this.progress, u);
     if (target && !force && sts[scope.indexOf(target)] === "locked") throw new ChapterLockedError(target.chapterId);
+    if (!scope.length) throw new NoContentError();
     this.chapter = target ?? scope[Math.max(0, sts.indexOf("current"))] ?? scope[scope.length - 1]!;
     this.chapterNo = all.filter((c) => (c.roadmap ?? "pattern") === (this.chapter!.roadmap ?? "pattern")).findIndex((c) => c.chapterId === this.chapter!.chapterId) + 1;
     const byPattern = new Map<number, number[]>(); this.sentences.clear();
@@ -115,7 +118,7 @@ export class StudyService {
 
   /** 연습 시작. weak = 오답 패턴 집중(시도 기록·노트에 반영), free = 자유 훈련(아무것도 기록하지 않는 샌드박스, 난이도 필터). */
   async startPractice(kind: PracticeKind, opts: { n?: number; level?: string; patternIds?: number[]; sentenceId?: number; roadmap?: string } = {}): Promise<{ ok: true; total: number } | { ok: false; reason: string }> {
-    if (!this.chapter) await this.open();
+    if (!this.chapter) { try { await this.open(); } catch (e) { if (e instanceof NoContentError) return { ok: false, reason: "아직 준비된 문장이 없어요" }; throw e; } }
     await this.rebuildNotes(); // 진도 맵은 챕터 세션이 공유하므로 교체하지 않는다
     const n = opts.n ?? (kind === "weak" ? 5 : 10);
     let order: number[];

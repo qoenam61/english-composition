@@ -11,13 +11,15 @@ import { SqliteUserStore } from "@app/adapter-userdb";
 import { GradingService } from "@app/grading";
 import { ChainJudge, ClaudeCliJudge, GeminiJudge, OpenAiCompatJudge } from "@app/adapter-llm";
 import type { LlmJudge } from "@app/contracts";
-import { ChapterLockedError, StudyService } from "@app/app";
+import { ChapterLockedError, NoContentError, StudyService } from "@app/app";
 import { PROVIDERS, accountId, authorizeUrl, cookieHeader, enabledProviders, identify, newState, parseCookies, sameState, signSession, verifySession } from "./auth.js";
 import { parseOwners, userIdFor } from "./identity.js";
 
 // 조립 지점(composition root): 어떤 어댑터를 쓸지는 여기서만 정한다.
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const content = new SqliteContentRepository(process.env.PACK ?? root + "dist/pack-personal.sqlite");
+const PACK_PATH = process.env.PACK ?? root + "dist/pack-personal.sqlite";
+const content = new SqliteContentRepository(PACK_PATH); // 관리자: 원본 + own 문장 전부
+const publicContent = new SqliteContentRepository(PACK_PATH, ["own"]); // 일반 사용자: own 문장이 있는 패턴만(원본은 개인용)
 // 저장소: 계정마다 DB 파일을 따로 둔다(data/users/<계정ID>.sqlite). 기존 기록("me")만 data/user.sqlite 를 쓰고, 로그인하지 않은 방문자는 저장하지 않는 메모리 DB를 쓴다.
 const meStore = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
 const usersDir = process.env.USERS_DIR ?? root + "data/users/";
@@ -143,7 +145,7 @@ function entryFor(userId: string, admin: boolean) {
   if (e && e.admin !== admin) { release(e); users.delete(userId); e = undefined; } // 권한이 바뀌면 새로 만든다
   if (e) { users.delete(userId); users.set(userId, e); return e; } // 최근 사용 순서로 갱신
   const st = storeFor(userId);
-  e = { study: new StudyService({ userId, content, store: st, grading, rng: Math.random, now: Date.now, tracks: admin ? ["original", "own"] : ["own"] }), opened: false, free: false, store: st, admin };
+  e = { study: new StudyService({ userId, content: admin ? content : publicContent, store: st, grading, rng: Math.random, now: Date.now, tracks: admin ? ["original", "own"] : ["own"] }), opened: false, free: false, store: st, admin };
   users.set(userId, e);
   if (users.size > MAX_USERS) { const k = users.keys().next().value!; release(users.get(k)!); users.delete(k); }
   return e;
@@ -224,16 +226,16 @@ createServer(async (req, res) => {
       deleteAccount(sess.u); res.setHeader("set-cookie", clearCookie("epa_s")); return json(res, 200, { ok: true });
     }
     if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: PROVIDERS.map((x) => ({ name: x.name, label: x.label, enabled: loginProviders.some((y) => y.name === x.name) })) });
-    const rmParam = (u: URL) => (isAdmin ? u.searchParams.get("roadmap") ?? undefined : "pattern"); // 비관리자는 패턴 로드맵만(상황별 주제는 own 문장이 없다)
+    const rmParam = (u: URL) => u.searchParams.get("roadmap") ?? undefined; // 일반 사용자는 own 문장이 있는 챕터만 보인다(콘텐츠 저장소가 걸러 준다)
     const ent = entryFor(userId, isAdmin); const study = ent.study;
     if (!ent.opened || url.pathname === "/api/open") {
       const want = url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined;
       try { await study.open(want, rmParam(url)); }
-      catch (e) { // 잠긴 챕터: 명시 요청(/api/open)은 403, 첫 요청에 딸려 온 오래된 값은 이어하기 대상으로 대체한다
+      catch (e) { if (e instanceof NoContentError) { /* 준비된 문장이 없음: 아래 API가 빈 응답을 준다 */ } else { // 잠긴 챕터: 명시 요청(/api/open)은 403, 첫 요청에 딸려 온 오래된 값은 이어하기 대상으로 대체한다
         if (!(e instanceof ChapterLockedError)) throw e;
         if (url.pathname === "/api/open") return json(res, 403, { error: "chapter locked" });
         await study.open(undefined, rmParam(url));
-      }
+      } }
       ent.opened = true;
     }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
@@ -249,7 +251,7 @@ createServer(async (req, res) => {
       if (!isAdmin && (r as { ok?: boolean }).ok === false) return json(res, 200, { ok: false, reason: "공개용 콘텐츠를 준비 중이에요. 곧 열릴 예정이에요." });
       return json(res, 200, r);
     }
-    if (url.pathname === "/api/roadmaps") return json(res, 200, isAdmin ? (await content.roadmaps?.()) ?? [] : ((await content.roadmaps?.()) ?? []).filter((r) => r.id === "pattern")); // 상황별(어휘 카드) 주제는 원본 카드라 관리자에게만
+    if (url.pathname === "/api/roadmaps") return json(res, 200, (await (isAdmin ? content : publicContent).roadmaps?.()) ?? []); // 상황별(어휘 카드) 주제는 원본 카드라 관리자에게만
     if (url.pathname === "/api/config") return json(res, 200, { tts: (await ttsServerUp()) ? "server" : "browser" });
     if (url.pathname === "/api/tts") {
       const text = (url.searchParams.get("text") ?? "").trim();
@@ -264,7 +266,7 @@ createServer(async (req, res) => {
       }
       res.writeHead(200, { ...base, "content-length": audio.length }); return res.end(audio);
     }
-    if (url.pathname === "/api/overview-all") return authed ? json(res, 200, await study.overviewAll((id) => isAdmin || id === "pattern")) : json(res, 403, { error: "login required" });
+    if (url.pathname === "/api/overview-all") return authed ? json(res, 200, await study.overviewAll()) : json(res, 403, { error: "login required" });
     if (url.pathname === "/api/overview") return authed ? json(res, 200, await study.overview(rmParam(url))) : json(res, 403, { error: "login required" });
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId), typeof b.roadmap === "string" ? b.roadmap : undefined)); }
     if (url.pathname === "/api/practice/exit") { study.exitPractice(); if (!authed) ent.free = false; return json(res, 200, { ok: true }); }

@@ -53,3 +53,29 @@ describe.skipIf(!existsSync(PACK))("pack-personal 통합", () => {
     expect(n + 1).toBe(ch.patternIds.length * 2);
   });
 });
+
+// 일반 사용자 시점: own 문장이 팩에 반영된 뒤에만 의미가 있다(반영 전이면 건너뜀).
+describe.skipIf(!existsSync(PACK))("pack-personal 일반 사용자(own 전용)", () => {
+  const pub = existsSync(PACK) ? new SqliteContentRepository(PACK, ["own"]) : (undefined as never);
+  it("보이는 모든 패턴에 own 문장이 있고, 원본 문장은 나오지 않는다", async () => {
+    const chs = await pub.chapters("*"); if (!chs.length) return;
+    for (const c of chs.filter((_, i) => i % 23 === 0)) for (const id of c.patternIds) {
+      const ss = await pub.sentences(id, ["own"]); expect(ss.length).toBeGreaterThan(0); expect(ss.every((x) => x.track === "own")).toBe(true);
+      expect((await pub.sentences(id, ["original"])).length).toBeGreaterThanOrEqual(0);
+    }
+    expect((await pub.roadmaps!()).map((r) => r.id)).toContain("pattern");
+  });
+  it("첫 챕터를 own 정답 입력으로 끝까지 완주한다", async () => {
+    const ch = (await pub.chapters())[0]; if (!ch) return;
+    const sentences = new Map<number, number[]>(); const answers = new Map<number, string[]>();
+    for (const id of ch.patternIds) { const ss = await pub.sentences(id, ["own"]); sentences.set(id, ss.map((s) => s.sentenceId)); for (const s of ss) answers.set(s.sentenceId, s.answers); }
+    let seed = 9; const rng = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    const s = new Session({ chapterId: ch.chapterId, patternIds: ch.patternIds, sentencesByPattern: sentences, progress: new Map<number, PatternProgress>(), rng });
+    const g = new GradingService(); let n = 0;
+    for (let p = s.next(); p && n < 800; p = s.next(), n++) {
+      const r = await g.grade(answers.get(p.sentenceId)![0]!, answers.get(p.sentenceId)!);
+      if (s.submit({ verdict: r.verdict === "ERROR" ? "FAIL" : r.verdict, usedHint: false, overTime: false }).chapterCompleted) break;
+    }
+    expect(s.board().complete).toBe(true);
+  });
+});
