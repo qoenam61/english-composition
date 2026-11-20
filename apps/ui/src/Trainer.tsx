@@ -44,7 +44,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
         setCard(r.card); setInput(""); setRes(null); setHint(null); setHintOpen(false); setUsedHint(false); setChapterDone(false);
         setLeft(r.card.timeLimitSec); setTiming(false); startedAt.current = 0;
         pending.current = null; setWaiting(false);
-        setTimeout(() => { if (id === loadId.current) { ta.current?.focus(); readQuestion(); } }, 2000); // 카드가 뜨고 2초 뒤 입력창에 커서를 주고 질문을 읽는다(이미 포커스 상태여도 읽는다)
+        setTimeout(() => { if (id === loadId.current) { ta.current?.focus(); readQuestion(); } }, 1000); // 카드가 뜨고 1초 뒤 입력창에 커서를 주고 질문을 읽는다(이미 포커스 상태여도 읽는다)
         const start = () => { if (id === loadId.current) { startedAt.current = Date.now(); setTiming(true); } };
         const q = speakable(r.card.context);
         if (ttsRef.current && q) { pending.current = { id, q, start }; setWaiting(true); } // 입력창에 커서가 생길 때 읽고, 읽기가 끝나면 카운트다운 시작
