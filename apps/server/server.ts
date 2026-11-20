@@ -195,7 +195,7 @@ createServer(async (req, res) => {
       for (const id of files) { const e = users.get(id); const st = e?.store ?? new SqliteUserStore(userFile(id)); const r = st.adminSummary()[0]; if (r) sum.set(id, { ...r, userId: id }); if (!e) st.close(); }
       const ids = new Set([...sum.keys(), ...Object.keys(accounts), ...files]);
       const list = [...ids].map((id) => { const u = sum.get(id); const a = accounts[id];
-        return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), admin: isAdminAccount(id), fixedAdmin: !!process.env.OWNER_ACCOUNTS?.split(",").map((x) => x.trim()).includes(id), linkedMe: ownerAccounts.has(id) }; });
+        return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), firstAt: a?.firstAt ?? 0, admin: isAdminAccount(id), fixedAdmin: !!process.env.OWNER_ACCOUNTS?.split(",").map((x) => x.trim()).includes(id), linkedMe: ownerAccounts.has(id) }; });
       return json(res, 200, { users: list.sort((x, y) => y.lastAt - x.lastAt) });
     }
     if (url.pathname === "/api/admin/promote" && req.method === "POST") {
