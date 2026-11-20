@@ -3,7 +3,7 @@ import { api } from "./api";
 import { Trainer } from "./Trainer";
 import { Btn, Card, useToast } from "./ui";
 
-const LEVELS = [["all", "전체"], ["A1", "A1"], ["A2", "A2"], ["B1", "B1"]] as const;
+const LEVELS = [["all", "전체"], ["A1", "A1"], ["A2", "A2"], ["B1", "B1"], ["B2", "B2"], ["C1", "C1"], ["C2", "C2"]] as const;
 
 /** 자유 훈련: 오답노트·진도·통계 어디에도 기록하지 않는 샌드박스. */
 export function Practice({ onGoRoadmap, onChanged }: { onGoRoadmap: () => void; onChanged: () => void }) {

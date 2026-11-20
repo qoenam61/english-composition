@@ -11,6 +11,7 @@ import { GradingService } from "@app/grading";
 import { ChainJudge, ClaudeCliJudge, GeminiJudge, OpenAiCompatJudge } from "@app/adapter-llm";
 import type { LlmJudge } from "@app/contracts";
 import { StudyService } from "@app/app";
+import { parseOwners, userIdFor } from "./identity.js";
 
 // 조립 지점(composition root): 어떤 어댑터를 쓸지는 여기서만 정한다.
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -64,7 +65,20 @@ async function ttsAudio(text: string, role: string): Promise<Buffer> {
   if (ttsCache.size >= 300) ttsCache.delete(ttsCache.keys().next().value!);
   ttsCache.set(key, buf); return buf;
 }
-const study = new StudyService({ userId: "me", content, store, grading: new GradingService(buildJudge()), rng: Math.random, now: Date.now, tracks: ["original", "own"] });
+// 접속 IP 기준 계정: 접속자마다 별도 StudyService(진도·오답·완료)를 둔다. 이 컴퓨터에서 직접 연 접속과 OWNER_IPS 의 IP 는 기존 기록("me").
+//   OWNER_IPS=쉼표로 구분한 본인 IP(예: 집·폰). 본인 IP 는 접속해서 /api/whoami 로 확인한다. 휴대폰 데이터망처럼 IP가 바뀌는 환경은 계정이 새로 생긴다(한계).
+const grading = new GradingService(buildJudge()); // 판정 캐시는 사용자와 무관하므로 공유
+const owners = parseOwners(process.env.OWNER_IPS);
+const MAX_USERS = 300; // 메모리에 올려 두는 계정 수 상한(넘으면 가장 오래 안 쓴 것부터 내린다. 기록은 DB에 남아 있다)
+const users = new Map<string, { study: StudyService; opened: boolean }>();
+function entryFor(userId: string) {
+  let e = users.get(userId);
+  if (e) { users.delete(userId); users.set(userId, e); return e; } // 최근 사용 순서로 갱신
+  e = { study: new StudyService({ userId, content, store, grading, rng: Math.random, now: Date.now, tracks: ["original", "own"] }), opened: false };
+  users.set(userId, e);
+  if (users.size > MAX_USERS) users.delete(users.keys().next().value!);
+  return e;
+}
 const uiDir = root + "apps/ui/dist"; // React 빌드 결과가 있으면 그것을, 없으면 예전 단일 페이지를 쓴다
 const legacyPage = readFileSync(root + "apps/web/index.html", "utf8");
 const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png" };
@@ -79,14 +93,16 @@ function serveStatic(pathname: string, res: any): boolean {
 
 const json = (res: any, code: number, body: unknown) => { res.writeHead(code, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); };
 const body = (req: any) => new Promise<any>((ok) => { let s = ""; req.on("data", (c: Buffer) => (s += c)); req.on("end", () => ok(s ? JSON.parse(s) : {})); });
-let opened = false;
 
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", "http://x");
     if (req.method === "GET" && !url.pathname.startsWith("/api/") && serveStatic(url.pathname, res)) return;
     if (req.method === "GET" && url.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(legacyPage); }
-    if (!opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); opened = true; }
+    const who = userIdFor(req.headers, req.socket.remoteAddress, owners);
+    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: who.userId === "me" ? "기존 기록(me)" : who.userId, owner: who.userId === "me" });
+    const ent = entryFor(who.userId); const study = ent.study;
+    if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
     if (url.pathname === "/api/next") return json(res, 200, { card: study.next() ?? null, summary: study.practiceSummary() ?? null });
     if (url.pathname === "/api/practice") {
