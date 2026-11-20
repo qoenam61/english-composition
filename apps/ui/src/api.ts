@@ -7,9 +7,12 @@ export type ErrType = "pattern_order" | "article_prep" | "vocab" | "tense";
 export interface WrongItem { patternId: number; sentenceId: number; wrongCount: number; lastWrongInput: string; lastWrongAt: number; ko: string; answer: string; template: string; error: { type: ErrType; label: string; comment: string } }
 export interface DoneItem { patternId: number; completedAt: number; ko: string; en: string; template: string }
 export interface Notes { wrong: WrongItem[]; completed: DoneItem[]; typeCount: Partial<Record<ErrType, number>>; top3: Array<{ patternId: number; template: string; wrongCount: number }> }
-export interface Chapter { chapterId: number; no: number; level: string; total: number; done: number; status: "done" | "current" | "locked" }
+export interface Chapter { chapterId: number; no: number; level: string; total: number; done: number; status: "done" | "current" | "open" | "locked" }
 export interface Roadmap { id: string; label: string }
-export interface Overview { roadmap: string; roadmaps: Roadmap[]; chapters: Chapter[]; currentChapterId?: number; activeChapterId?: number; header: { streakDays: number; mastered: number; wrongCount: number }; totalPatterns: number; totalDone: number }
+export interface Overview { roadmap: string; roadmaps: Roadmap[]; chapters: Chapter[]; userLevel: string | null; currentChapterId?: number; activeChapterId?: number; header: { streakDays: number; mastered: number; wrongCount: number }; totalPatterns: number; totalDone: number }
+export interface TierStat { total: number; done: number; open: number }
+export interface MapRoadmap { id: string; label: string; tiers: TierStat[]; chapters: number; patterns: number; currentChapterId?: number; currentTier: number; currentNo?: number; started: boolean }
+export interface OverviewAll { userLevel: string | null; roadmaps: MapRoadmap[] }
 export interface Stats { streakDays: number; totalAttempts: number; days: Array<{ date: string }> }
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -24,6 +27,7 @@ export const api = {
   notes: () => call<Notes>("/api/notes"),
   stats: () => call<Stats>("/api/stats"),
   overview: (roadmap?: string) => call<Overview>(roadmap ? `/api/overview?roadmap=${encodeURIComponent(roadmap)}` : "/api/overview"),
+  overviewAll: () => call<OverviewAll>("/api/overview-all"),
   open: (chapter?: number) => call<{ ok: boolean }>(chapter ? `/api/open?chapter=${chapter}` : "/api/open"),
   practice: (kind: "weak" | "free", q: Record<string, string | number | undefined> = {}) => {
     const p = new URLSearchParams({ kind, ...Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])) });

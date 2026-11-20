@@ -1,57 +1,60 @@
-import { useEffect, useState } from "react";
-import { api, type Overview } from "./api";
-import { Btn, Card, useToast } from "./ui";
+import { useCallback, useEffect, useState } from "react";
+import { api, type Overview, type OverviewAll } from "./api";
+import { ChapterPath } from "./ChapterPath";
+import { IslandMap } from "./IslandMap";
+import { LEVELS, MAPS, SEA } from "./roadmapKit";
+import { useToast } from "./ui";
 
-const OFFS = [0, 70, 105, 70, 0, -70, -105, -70];
-const PER = 8, ROW = 118;
+const store = (k: string, v?: string) => { try { if (v !== undefined) localStorage.setItem(k, v); return localStorage.getItem(k); } catch { return null; } };
 
+/** 챕터 로드맵: 섬 지도(전체)와 챕터 길(카테고리 하나). 모바일은 한 화면씩 오가고, 웹은 나란히 보여 준다. */
 export function Roadmap({ onStudy }: { onStudy: () => void }) {
   const toast = useToast();
-  const [ov, setOv] = useState<Overview | null>(null); const [page, setPage] = useState(0);
-  const [rm, setRm] = useState<string>(() => { try { return localStorage.getItem("roadmap") ?? "pattern"; } catch { return "pattern"; } });
+  const [all, setAll] = useState<OverviewAll | null>(null);
+  const [ov, setOv] = useState<Overview | null>(null);
+  const [sel, setSel] = useState<string>(() => { const s = store("roadmap"); return MAPS.some((m) => m.id === s) ? s! : "pattern"; });
+  const [screen, setScreen] = useState<"map" | "detail">("map");
+
+  const loadAll = useCallback(() => { void api.overviewAll().then((a) => {
+    setAll(a);
+    setSel((s) => (a.roadmaps.some((r) => r.id === s) ? s : "pattern")); // 보이지 않는 카테고리를 기억하고 있으면 패턴으로 되돌린다
+    const prev = LEVELS.indexOf(store("userLevel") ?? ""), now = LEVELS.indexOf(a.userLevel ?? ""); // 레벨이 오르면 한 번 알려 준다(저장값이 없던 기기에서는 조용히 기록만)
+    if (now > prev && a.userLevel) { if (prev >= 0) toast(`레벨 ${a.userLevel} 달성! 모든 카테고리의 ${a.userLevel} 이하 챕터가 열렸어요`, "ok"); store("userLevel", a.userLevel); }
+  }).catch(() => setAll({ userLevel: null, roadmaps: [] })); }, [toast]);
+  useEffect(loadAll, [loadAll]);
   useEffect(() => {
-    void api.overview(rm).then((o) => { if (!o.chapters.length && rm !== "pattern") { setRm("pattern"); return; } setOv(o); const i = o.chapters.findIndex((c) => c.chapterId === o.currentChapterId); setPage(Math.max(0, Math.floor(i / PER))); }).catch(() => { if (rm !== "pattern") setRm("pattern"); });
-  }, [rm]);
-  const pick = (id: string) => { setOv(null); setRm(id); try { localStorage.setItem("roadmap", id); } catch { /* 저장 불가 환경 */ } };
-  if (!ov) return <div className="py-20 text-center text-t3">불러오는 중…</div>;
-  const pages = Math.ceil(ov.chapters.length / PER); const list = ov.chapters.slice(page * PER, page * PER + PER);
-  const cur = ov.chapters.find((c) => c.chapterId === (ov.activeChapterId ?? ov.currentChapterId)) ?? ov.chapters.find((c) => c.status === "current");
-  const go = async (id: number) => { await api.open(id); onStudy(); };
-  const pts = list.map((_, i) => ({ x: 160 + OFFS[i % PER]!, y: i * ROW + 44 }));
-  const path = pts.map((p, i) => (i === 0 ? `M${p.x} ${p.y}` : `C${pts[i - 1]!.x} ${pts[i - 1]!.y + ROW / 2} ${p.x} ${p.y - ROW / 2} ${p.x} ${p.y}`)).join(" ");
+    setOv(null);
+    void api.overview(sel).then((o) => { if (o.roadmap !== sel) setSel(o.roadmap); else setOv(o); }).catch(() => { if (sel !== "pattern") setSel("pattern"); }); // 서버가 다른 로드맵을 돌려주면(권한 밖) 그쪽으로 맞춘다
+  }, [sel]);
+
+  const pick = (id: string) => {
+    if (!all?.roadmaps.some((r) => r.id === id)) { toast("아직 준비 중이에요", "info"); return; } // 닫힌(안개) 섬
+    setSel(id); store("roadmap", id); setScreen("detail"); window.scrollTo({ top: 0 });
+  };
+  const go = async (chapterId: number) => { try { await api.open(chapterId); onStudy(); } catch { toast("아직 열리지 않은 챕터예요", "warn"); } };
+  const meta = MAPS.find((m) => m.id === sel) ?? MAPS[0]!;
+  const last = all?.roadmaps.find((r) => r.id === sel);
+
+  if (!all) return <div className="py-20 text-center text-t3">불러오는 중…</div>;
   return (
-    <div className="max-w-2xl mx-auto px-4 py-5">
-      <select value={ov.roadmap} onChange={(e) => pick(e.target.value)} aria-label="로드맵 선택" className="w-full mb-4 px-3 py-2.5 rounded-xl bg-surface text-t1 font-extrabold border-2 border-cardb">
-        {ov.roadmaps.map((x, i) => <option key={x.id} value={x.id}>{i === 0 ? "★ " : ""}{x.label}</option>)}
-        {/* 첫 항목(패턴 로드맵) 아래부터 상황별 */}
-      </select>
-      {cur && (
-        <Card className="p-4 flex items-center justify-between gap-3 mb-5">
-          <div className="min-w-0"><div className="text-xs text-t3">현재 진행 중</div><div className="font-extrabold text-t1 truncate">{cur.level} · 챕터 {cur.no} <span className="text-t3 text-sm font-bold">({cur.done}/{cur.total})</span></div></div>
-          <Btn onClick={() => void go(cur.chapterId)} className="shrink-0 text-sm">⚡ 마지막 학습 이어하기</Btn>
-        </Card>
-      )}
-      <div className="flex items-center justify-between mb-2 text-sm text-t2">
-        <button disabled={page === 0} onClick={() => setPage(page - 1)} className="px-3 py-1.5 rounded-lg bg-surface disabled:opacity-30">◀ 이전</button>
-        <span className="font-bold">챕터 {list[0]?.no}–{list[list.length - 1]?.no} <span className="text-t3">({page + 1}/{pages})</span></span>
-        <button disabled={page >= pages - 1} onClick={() => setPage(page + 1)} className="px-3 py-1.5 rounded-lg bg-surface disabled:opacity-30">다음 ▶</button>
-      </div>
-      <div className="relative mx-auto mt-12" style={{ width: 320, maxWidth: "100%", height: list.length * ROW + 20 }}>
-        <svg className="absolute inset-0" width="320" height={list.length * ROW + 20} viewBox={`0 0 320 ${list.length * ROW + 20}`} aria-hidden><path d={path} fill="none" stroke="#2A3F48" strokeWidth="8" strokeLinecap="round" strokeDasharray="2 14" /></svg>
-        {list.map((c, i) => {
-          const p = pts[i]!; const tone = c.status === "done" ? "bg-gold border-gold-d text-app" : c.status === "current" ? "bg-sky border-sky-d text-white" : "bg-surface border-app text-t3";
-          return (
-            <div key={c.chapterId} className="absolute" style={{ left: p.x - 40, top: p.y - 40 }}>
-              {c.status === "current" && <><span className="absolute inset-0 rounded-full bg-sky/40 pulse-ring" /><span className="absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white text-app text-xs font-extrabold rounded-lg px-2.5 py-1 after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-4 after:border-transparent after:border-t-white">시작하기!</span></>}
-              <button onClick={() => c.status === "locked" ? toast("앞 챕터를 모두 마치면 열려요", "warn") : void go(c.chapterId)} aria-label={`챕터 ${c.no} ${c.status}`}
-                className={`relative w-20 h-20 rounded-full border-b-[6px] font-black text-lg grid place-items-center transition-all duration-100 active:border-b-transparent active:translate-y-[6px] ${tone}`}>
-                {c.status === "done" ? "👑" : c.status === "locked" ? "🔒" : c.no}
-              </button>
-              <div className="text-center text-[11px] text-t3 mt-1.5">{c.level} · {c.no} · {c.done}/{c.total}</div>
-            </div>
-          );
-        })}
-      </div>
+    <div className="mx-auto max-w-md px-4 py-5 md:max-w-6xl md:grid md:grid-cols-[1.05fr_1fr] md:items-start md:gap-6">
+      <section className={`${screen === "detail" ? "hidden md:block" : ""} md:sticky md:top-20`} aria-label="카테고리 섬 지도">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="rounded-full bg-surface px-3 py-1.5 text-sm font-extrabold text-t1">{all.userLevel ? `내 레벨 ${all.userLevel}` : "내 레벨 시작 전"}</span>
+          {last?.currentChapterId && <button onClick={() => void go(last.currentChapterId!)} className="ml-auto rounded-xl bg-sky px-3 py-1.5 text-sm font-extrabold text-app border-b-4 border-sky-d">⚡ {meta.n} 이어하기</button>}
+        </div>
+        <div className="overflow-hidden rounded-2xl border-2 border-cardb" style={{ background: SEA.b }}>
+          <IslandMap data={all.roadmaps} selected={sel} onSelect={pick} />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t-2 border-cardb bg-card px-3 py-2.5 text-xs text-t3">
+            <span><b className="text-green">★1 입문</b> · <b className="text-orange">★2 중급</b> · <b className="text-purple">★3 고급</b></span>
+            <span>섬을 두른 고리 = 단계별 진행도 · 속 빈 별 = 탐험 전</span>
+          </div>
+        </div>
+      </section>
+      <section className={`${screen === "map" ? "hidden md:block" : ""} mt-0 md:mt-0`} aria-label="챕터 길">
+        {ov && ov.roadmap === sel ? <ChapterPath key={ov.roadmap} ov={ov} title={meta.n} emoji={meta.e} onBack={() => { setScreen("map"); loadAll(); }} onGo={(id) => void go(id)} onLocked={() => toast("앞 챕터를 모두 마치거나 레벨을 올리면 열려요", "warn")} />
+          : <div className="py-20 text-center text-t3">불러오는 중…</div>}
+      </section>
     </div>
   );
 }
