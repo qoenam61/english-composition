@@ -19,6 +19,9 @@ export function unlockAudio(): void {
 }
 if (typeof window !== "undefined") for (const ev of ["pointerdown", "touchend", "keydown"]) window.addEventListener(ev, unlockAudio, { once: false, passive: true });
 const enVoice = (): SpeechSynthesisVoice | undefined => { try { const v = window.speechSynthesis.getVoices(); return v.find((x) => x.lang === "en-US") ?? v.find((x) => x.lang.startsWith("en")); } catch { return undefined; } };
+/** 마지막으로 읽은 엔진과(대체됐다면) 이유 — 화면에 보여 원인을 알 수 있게 한다. */
+let info = "";
+export const ttsInfo = (): string => info;
 let serverDownUntil = 0; // 서버 음성이 실패하면 이 시각까지는 브라우저 음성으로 바로 간다
 const finishers = new Set<() => void>(); let audio: HTMLAudioElement | null = null;
 export function cancelSpeech(): void {
@@ -50,12 +53,12 @@ export function speak(text: string, role: Role = "q"): Promise<void> {
     finishers.add(finish);
     const words = text.trim().split(/\s+/).length;
     const timer = setTimeout(finish, 3500 + words * 700); // 안전장치: 이 시간이 지나면 끝난 것으로 본다
-    const browserSpeak = () => { if (!browserOk()) return finish(); try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v; u.onend = finish; u.onerror = finish; window.speechSynthesis.resume(); window.speechSynthesis.speak(u); } catch { finish(); } };
+    const browserSpeak = () => { if (!browserOk()) return finish(); if (provider !== "server") info = "브라우저 음성"; setTimeout(() => { try { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v; u.onend = finish; u.onerror = finish; window.speechSynthesis.resume(); window.speechSynthesis.speak(u); } catch { finish(); } }, 200); }; // 취소 직후 바로 읽으면 앞부분이 잘려서 0.2초 늦춘다
     if (provider === "server" && Date.now() >= serverDownUntil) { // 서버 음성: 재생 실패(자동재생 차단·서버 오류)면 브라우저 음성으로 대신한다
-      try { const a = player ?? new Audio(); a.src = "/api/tts?role=" + role + "&text=" + encodeURIComponent(text); audio = a; const fall = () => { serverDownUntil = Date.now() + 60_000; browserSpeak(); }; a.onended = finish; a.onerror = fall; void a.play().catch(fall); } catch { browserSpeak(); }
+      try { const a = player ?? new Audio(); a.src = "/api/tts?role=" + role + "&text=" + encodeURIComponent(text); audio = a; const fall = (why: string) => { serverDownUntil = Date.now() + 60_000; info = "브라우저 음성(" + why + ")"; browserSpeak(); }; a.onended = finish; a.onerror = () => fall("서버 음성 로드 실패"); a.onplaying = () => { info = "Kokoro"; }; void a.play().catch((e: unknown) => fall(e instanceof DOMException ? e.name : "재생 거부")); } catch { browserSpeak(); }
       return;
     }
-    if (provider === "server") return browserSpeak(); // 서버 음성이 최근 실패했으면 60초간 바로 브라우저 음성
+    if (provider === "server") return browserSpeak(); // 서버 음성이 최근 실패했으면 60초간 바로 브라우저 음성(info 는 실패 때 이미 기록됨)
     try {
       const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; const v = pickVoice(role) ?? enVoice(); if (v) u.voice = v;
       u.onend = finish; u.onerror = finish;

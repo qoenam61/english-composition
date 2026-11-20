@@ -3,7 +3,7 @@ import { api, type Card as CardT, type Submit, type Summary } from "./api";
 import { diffWords } from "./diff";
 /** 읽을 문맥: "Q: ..." 는 상대 말, "(...)" 는 상황 설명이라 괄호를 벗겨 읽는다. */
 const speakable = (c?: string | null): string => (!c ? "" : c.startsWith("Q: ") ? c.slice(3) : c.startsWith("(") && c.endsWith(")") ? c.slice(1, -1) : "");
-import { cancelSpeech, setTtsEnabled, speak, speakSequence, ttsEnabled, ttsSupported, unlockAudio } from "./tts";
+import { cancelSpeech, setTtsEnabled, speak, speakSequence, ttsEnabled, ttsInfo, ttsSupported, unlockAudio } from "./tts";
 import { Badge, Btn, Card, Modal, useToast } from "./ui";
 
 type Graded = Extract<Submit, { kind: "graded" }>;
@@ -129,7 +129,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
         <>
           <div className="flex items-center justify-between gap-3 mb-2 text-sm">
             <span className="font-extrabold text-t1 truncate">{card.mode === "chapter" ? `${card.level} · 챕터 ${card.chapterId}` : card.level}</span>
-            {ttsSupported() && <button type="button" onClick={toggleTts} aria-pressed={tts} className={`shrink-0 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-extrabold border-b-2 ${tts ? "bg-sky text-white border-sky-d" : "bg-surface text-t3 border-app"}`}>{tts ? "🔊 음성 ON" : "🔇 음성 OFF"}</button>}
+            {ttsSupported() && <button type="button" onClick={toggleTts} aria-pressed={tts} className={`shrink-0 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-extrabold border-b-2 ${tts ? "bg-sky text-white border-sky-d" : "bg-surface text-t3 border-app"}`}>{tts ? "🔊 음성 ON" + (ttsInfo() ? " · " + ttsInfo() : "") : "🔇 음성 OFF"}</button>}
             <div className="flex items-center gap-2 shrink-0" aria-label="남은 시간">
               <div className="w-20 h-2 rounded-full bg-surface overflow-hidden"><div className={`h-full ${gauge} transition-[width] duration-100`} style={{ width: `${res ? 0 : frac * 100}%` }} /></div>
               <span className={`tabular-nums font-bold w-12 text-right ${frac <= 0.25 && !res ? "text-red" : "text-t3"}`}>{res ? "—" : speaking ? "🔊" : waiting ? "⏸" : `${left.toFixed(1)}s`}</span>

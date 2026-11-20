@@ -3,6 +3,7 @@ GET /v1/models, POST /v1/audio/speech {input, voice, response_format: wav}"""
 import io
 import threading
 
+import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
@@ -36,6 +37,7 @@ def speech(r: Req):
         raise HTTPException(400, "unknown voice")
     with lock:
         samples, rate = kokoro.create(text, voice=r.voice, speed=r.speed, lang="en-us")
+    samples = np.concatenate([np.zeros(int(rate * 0.35), dtype=samples.dtype), samples])  # 앞에 0.35초 무음: 재생 장치가 켜지는 동안 앞부분이 잘리지 않게
     buf = io.BytesIO()
     sf.write(buf, samples, rate, format="WAV", subtype="PCM_16")
     return Response(buf.getvalue(), media_type="audio/wav")
