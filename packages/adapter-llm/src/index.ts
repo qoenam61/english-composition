@@ -54,7 +54,7 @@ export class ClaudeCliJudge implements LlmJudge {
 
 /** OpenAI 호환 채팅 API(Groq·Gemini 호환 엔드포인트·OpenRouter·Cerebras·로컬 Ollama 등). 키는 환경변수로만 받는다. */
 export class OpenAiCompatJudge implements LlmJudge {
-  constructor(private o: { baseUrl: string; apiKey?: string; model: string; timeoutMs?: number }) {}
+  constructor(private o: { baseUrl: string; apiKey?: string; model: string; timeoutMs?: number; fast?: boolean }) {}
 
   async judge(input: string, answers: string[], context?: string, info: JudgeInfo = {}): Promise<JudgeOutcome> {
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), this.o.timeoutMs ?? 20_000);
@@ -62,7 +62,7 @@ export class OpenAiCompatJudge implements LlmJudge {
       const r = await fetch(this.o.baseUrl.replace(/\/$/, "") + "/chat/completions", {
         method: "POST", signal: ctl.signal,
         headers: { "content-type": "application/json", ...(this.o.apiKey ? { authorization: `Bearer ${this.o.apiKey}` } : {}) },
-        body: JSON.stringify({ model: this.o.model, temperature: 0, messages: [{ role: "user", content: buildPrompt(input, answers, context, info) }] }),
+        body: JSON.stringify({ model: this.o.model, temperature: 0, max_tokens: 200, ...(this.o.fast ? { reasoning_effort: "low" } : {}), messages: [{ role: "user", content: buildPrompt(input, answers, context, info) }] }),
       });
       if (!r.ok) throw new Error(`판정 API 오류 (${r.status})`);
       const j = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> };

@@ -23,7 +23,7 @@ function buildJudge(): LlmJudge | undefined {
   if (process.env.JUDGE === "off") return undefined;
   const list: LlmJudge[] = [];
   for (const name of (process.env.JUDGE_CHAIN ?? "groq,claude").split(",").map((x) => x.trim()).filter(Boolean)) {
-    if (name === "groq" && process.env.GROQ_API_KEY) list.push(new OpenAiCompatJudge({ baseUrl: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY, model: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b" }));
+    if (name === "groq" && process.env.GROQ_API_KEY) list.push(new OpenAiCompatJudge({ baseUrl: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY, model: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b", timeoutMs: 8000, fast: true }));
     else if (name === "claude") list.push(new ClaudeCliJudge({ model: process.env.JUDGE_MODEL ?? "haiku" }));
     else if (name === "openai" && process.env.JUDGE_BASE_URL && process.env.JUDGE_API_MODEL) list.push(new OpenAiCompatJudge({ baseUrl: process.env.JUDGE_BASE_URL, apiKey: process.env.JUDGE_API_KEY, model: process.env.JUDGE_API_MODEL }));
   }
@@ -50,7 +50,7 @@ async function ttsAudio(text: string, role: string): Promise<Buffer> {
   const hit = ttsCache.get(key); if (hit) return hit;
   const r = await fetch((process.env.TTS_URL ?? "http://127.0.0.1:8880/v1").replace(/\/$/, "") + "/audio/speech", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model: process.env.TTS_MODEL ?? "kokoro", voice, input: text, response_format: "mp3" }), signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({ model: process.env.TTS_MODEL ?? "kokoro", voice, input: text, response_format: "wav" }), signal: AbortSignal.timeout(15_000),
   });
   if (!r.ok) throw new Error(`음성 서버 오류 (${r.status})`);
   const buf = Buffer.from(await r.arrayBuffer());
@@ -91,7 +91,7 @@ createServer(async (req, res) => {
     if (url.pathname === "/api/tts") {
       const text = (url.searchParams.get("text") ?? "").trim();
       if (!(await ttsServerUp()) || !text || text.length > 300) return json(res, 400, { error: "음성 서버를 쓸 수 없어요" });
-      const audio = await ttsAudio(text, url.searchParams.get("role") === "a" ? "a" : "q"); res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "public, max-age=86400" }); return res.end(audio);
+      const audio = await ttsAudio(text, url.searchParams.get("role") === "a" ? "a" : "q"); res.writeHead(200, { "content-type": "audio/wav", "cache-control": "public, max-age=86400" }); return res.end(audio);
     }
     if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
