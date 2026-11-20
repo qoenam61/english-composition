@@ -87,8 +87,7 @@ const owners = parseOwners(process.env.OWNER_IPS);
 const publicBase = (process.env.PUBLIC_BASE_URL ?? "").replace(/\/$/, "");
 const secureCookies = publicBase.startsWith("https://");
 const loginProviders = enabledProviders(process.env);
-// ADMIN_EMAIL: 구글이 "검증된 이메일"로 확인해 준 계정이 이 주소와 같으면 관리자(+기존 기록 me 연결). 이메일은 비교에만 쓰고 저장하지 않으며, 계정 ID만 data/owners.json 에 남긴다.
-const adminEmails = new Set((process.env.ADMIN_EMAIL ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
+// 관리자·기존 기록 연결은 이 컴퓨터의 관리자 패널에서만 지정한다(인터넷 쪽에서는 이메일 등 어떤 정보로도 관리자가 될 수 없다).
 const ownersFile = root + "data/owners.json";
 const ownerAccounts = new Set([...(process.env.OWNER_ACCOUNTS ?? "").split(",").map((x) => x.trim()).filter(Boolean), ...readJsonSafe<string[]>(ownersFile, [])]);
 function readJsonSafe<T>(f: string, d: T): T { try { return JSON.parse(readFileSync(f, "utf8")) as T; } catch { return d; } }
@@ -128,9 +127,8 @@ async function handleAuth(req: any, res: any, url: URL): Promise<void> {
     const code = url.searchParams.get("code");
     if (url.searchParams.get("error") || !code || !sameState(c.epa_st, url.searchParams.get("state"))) return redirect(res, "/?login=failed", wipe);
     try {
-      const who = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
-      const acc = accountId(p.name, who.id); noteLogin(acc, p.name);
-      if (p.name === "google" && who.email && adminEmails.has(who.email) && !ownerAccounts.has(acc)) { ownerAccounts.add(acc); mkdirSync(root + "data", { recursive: true }); writeFileSync(ownersFile, JSON.stringify([...ownerAccounts].filter(validAccount)), { mode: 0o600 }); }
+      const sub = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
+      const acc = accountId(p.name, sub); noteLogin(acc, p.name);
       return redirect(res, "/", [...wipe, startSession(acc, p.name)]);
     } catch (e) { console.error("로그인 실패:", p.name, e instanceof Error ? e.message : "unknown"); return redirect(res, "/?login=failed", wipe); }
   }
@@ -197,15 +195,23 @@ createServer(async (req, res) => {
       for (const id of files) { const e = users.get(id); const st = e?.store ?? new SqliteUserStore(userFile(id)); const r = st.adminSummary()[0]; if (r) sum.set(id, { ...r, userId: id }); if (!e) st.close(); }
       const ids = new Set([...sum.keys(), ...Object.keys(accounts), ...files]);
       const list = [...ids].map((id) => { const u = sum.get(id); const a = accounts[id];
-        return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), admin: isAdminAccount(id), fixedAdmin: ownerAccounts.has(id) }; });
+        return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), admin: isAdminAccount(id), fixedAdmin: !!process.env.OWNER_ACCOUNTS?.split(",").map((x) => x.trim()).includes(id), linkedMe: ownerAccounts.has(id) }; });
       return json(res, 200, { users: list.sort((x, y) => y.lastAt - x.lastAt) });
     }
     if (url.pathname === "/api/admin/promote" && req.method === "POST") {
-      if (!isAdmin) return json(res, 403, { error: "forbidden" });
+      if (!(!sess && who.local)) return json(res, 403, { error: "local only" }); // 관리자 지정은 이 컴퓨터에서만
       const q = new URL(req.url ?? "", "http://x").searchParams; const id = q.get("id") ?? "";
       if (!accounts[id]) return json(res, 400, { error: "unknown account" });
       if (q.get("on") === "1") savedAdmins.add(id); else savedAdmins.delete(id);
       saveJson(admFile, [...savedAdmins]); return json(res, 200, { ok: true });
+    }
+    if (url.pathname === "/api/admin/linkme" && req.method === "POST") { // 이 계정을 기존 학습 기록(me)에 연결/해제 — 이 컴퓨터 직접 접속에서만
+      if (!(!sess && who.local)) return json(res, 403, { error: "local only" });
+      const q = new URL(req.url ?? "", "http://x").searchParams; const id = q.get("id") ?? "";
+      if (!validAccount(id) || !accounts[id]) return json(res, 400, { error: "unknown account" });
+      if (q.get("on") === "1") ownerAccounts.add(id); else ownerAccounts.delete(id);
+      mkdirSync(root + "data", { recursive: true }); writeFileSync(ownersFile, JSON.stringify([...ownerAccounts].filter(validAccount)), { mode: 0o600 });
+      const e = users.get(id); if (e) { release(e); users.delete(id); } return json(res, 200, { ok: true });
     }
     if (url.pathname === "/api/admin/delete" && req.method === "POST") {
       if (!isAdmin) return json(res, 403, { error: "forbidden" });
