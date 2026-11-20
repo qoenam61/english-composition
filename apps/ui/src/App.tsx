@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Overview } from "./api";
-import { AccountButton, ContentPending, LockedView, useWho, type Who } from "./Account";
+import { AccountButton, LockedView, useWho, type Who } from "./Account";
 import { Completed, WrongNotes } from "./Notes";
 import { Practice } from "./Practice";
 import { Roadmap } from "./Roadmap";
@@ -20,7 +20,7 @@ function Shell({ who }: { who: Who }) {
   const [key, setKey] = useState(0);
   const [ov, setOv] = useState<Overview | null>(null);
   const [typing, setTyping] = useState(false);
-  const refresh = useCallback(() => { if (!who.admin) return; void api.overview().then(setOv).catch(() => {}); }, [who.admin]);
+  const refresh = useCallback(() => { if (!authed) return; void api.overview().then(setOv).catch(() => {}); }, [authed]);
   useEffect(refresh, [refresh, tab]);
   useEffect(() => { history.replaceState(null, "", "#" + tab); }, [tab]);
   useEffect(() => {
@@ -53,12 +53,11 @@ function Shell({ who }: { who: Who }) {
       </header>
       <main className={`flex-1 ${typing ? "" : "pb-24"} md:pb-6`}>
         {!authed && tab !== "practice" && <LockedView onLogin={() => setLoginOpen(true)} />}
-        {authed && !who.admin && tab !== "practice" && <ContentPending />}
-        {authed && who.admin && tab === "study" && <Trainer key={key} kind={launch} onChanged={refresh} onRestart={() => void startWeak()} onGoRoadmap={() => setTab("roadmap")} onGoNotes={() => setTab("wrong")} />}
-        {authed && who.admin && tab === "wrong" && <WrongNotes onWeak={() => void startWeak()} onReview={(s) => void startWeak(s)} />}
-        {authed && who.admin && tab === "done" && <Completed onChanged={refresh} onOpenChapter={() => void goStudy()} />}
+        {authed && tab === "study" && <Trainer key={key} kind={launch} onChanged={refresh} onRestart={() => void startWeak()} onGoRoadmap={() => setTab("roadmap")} onGoNotes={() => setTab("wrong")} />}
+        {authed && tab === "wrong" && <WrongNotes onWeak={() => void startWeak()} onReview={(s) => void startWeak(s)} />}
+        {authed && tab === "done" && <Completed onChanged={refresh} onOpenChapter={() => void goStudy()} />}
         {tab === "practice" && <Practice onChanged={refresh} onGoRoadmap={() => setTab("roadmap")} />}
-        {authed && who.admin && tab === "roadmap" && <Roadmap onStudy={() => void goStudy()} />}
+        {authed && tab === "roadmap" && <Roadmap onStudy={() => void goStudy()} />}
       </main>
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-30 bg-app border-t-2 border-cardb pb-[env(safe-area-inset-bottom)] ${typing ? "hidden" : "grid"} grid-cols-4`}>
         {TABS.map(([t, l, i]) => <button key={t} onClick={() => select(t)} className={`relative py-2 flex flex-col items-center gap-0.5 text-[11px] font-bold ${active === t ? "text-sky" : "text-t3"}`}><span className="text-lg leading-none">{i}</span>{l.replace("챕터 ", "")}{t === "wrong" && h && h.wrongCount > 0 && <span className="absolute top-1 right-[22%] min-w-4 h-4 px-1 rounded-full bg-red text-white text-[10px] grid place-items-center">{h.wrongCount}</span>}</button>)}

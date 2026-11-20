@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import type { DatabaseSync as DB } from "node:sqlite";
-import type { ChapterRef, ContentRepository, PatternRef, SentenceRef } from "@app/contracts";
+import type { ChapterRef, ContentRepository, PatternRef, RoadmapRef, SentenceRef } from "@app/contracts";
 
 // vite 가 node:sqlite 접두사를 떼어 버리므로 require 로 불러온다
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
@@ -8,13 +8,24 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof
 /** 콘텐츠 팩(SQLite)을 읽는 ContentRepository 구현체. 읽기 전용. */
 export class SqliteContentRepository implements ContentRepository {
   private db: DB;
-  constructor(path: string) { this.db = new DatabaseSync(path, { readOnly: true } as object); }
+  constructor(path: string) { this.db = new DatabaseSync(path, { readOnly: true } as object); this.hasRoadmap = this.detectRoadmap(); }
 
-  async chapters(): Promise<ChapterRef[]> {
-    const rows = this.db.prepare("SELECT c.chapter_id AS id, c.level AS level, cp.pattern_id AS pid FROM chapter c JOIN chapter_pattern cp USING(chapter_id) ORDER BY c.chapter_id, cp.position").all() as Array<{ id: number; level: string; pid: number }>;
+  private hasRoadmap: boolean; // 구버전 팩(roadmap 컬럼 없음)도 읽는다
+  private detectRoadmap(): boolean { try { return (this.db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('chapter') WHERE name='roadmap'").get() as { n: number }).n > 0; } catch { return false; }
+  }
+
+  async roadmaps(): Promise<RoadmapRef[]> {
+    if (!this.hasRoadmap) return [{ id: "pattern", label: "패턴 학습 로드맵" }];
+    return (this.db.prepare("SELECT roadmap_id AS id, label FROM roadmap ORDER BY position").all() as unknown as RoadmapRef[]);
+  }
+
+  async chapters(roadmap = "pattern"): Promise<ChapterRef[]> {
+    const where = this.hasRoadmap && roadmap !== "*" ? "WHERE c.roadmap=?" : "";
+    const sel = this.hasRoadmap ? "c.roadmap AS rm" : "'pattern' AS rm";
+    const rows = this.db.prepare(`SELECT c.chapter_id AS id, c.level AS level, cp.pattern_id AS pid, ${sel} FROM chapter c JOIN chapter_pattern cp USING(chapter_id) ${where} ORDER BY c.chapter_id, cp.position`).all(...(where ? [roadmap] : [])) as unknown as Array<{ id: number; level: string; pid: number; rm: string }>;
     const out = new Map<number, ChapterRef>();
     for (const r of rows) {
-      const c = out.get(r.id) ?? { chapterId: r.id, level: r.level, patternIds: [] };
+      const c = out.get(r.id) ?? { chapterId: r.id, level: r.level, patternIds: [], roadmap: r.rm };
       c.patternIds.push(r.pid); out.set(r.id, c);
     }
     return [...out.values()];

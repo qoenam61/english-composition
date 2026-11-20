@@ -48,7 +48,8 @@ o.executescript("""
 CREATE TABLE pattern(pattern_id INTEGER PRIMARY KEY, template TEXT, level TEXT);
 CREATE TABLE sentence(sentence_id INTEGER PRIMARY KEY, pattern_id INTEGER, track TEXT, en TEXT, ko TEXT, context TEXT, must_use TEXT, difficulty TEXT, source_ref TEXT);
 CREATE TABLE sentence_answer(sentence_id INTEGER, answer_en TEXT, kind TEXT, rule_version INTEGER);
-CREATE TABLE chapter(chapter_id INTEGER PRIMARY KEY, level TEXT, n_patterns INTEGER);
+CREATE TABLE chapter(chapter_id INTEGER PRIMARY KEY, level TEXT, n_patterns INTEGER, roadmap TEXT NOT NULL DEFAULT 'pattern');
+CREATE TABLE roadmap(roadmap_id TEXT PRIMARY KEY, label TEXT, position INTEGER);
 CREATE TABLE chapter_pattern(chapter_id INTEGER, position INTEGER, pattern_id INTEGER);
 CREATE TABLE pack_manifest(pack_id TEXT, version TEXT, track_set TEXT, built_at TEXT, content_hash TEXT);
 """)
@@ -58,13 +59,18 @@ ans = {sid: a for sid, a, _ in nomust}
 o.executemany("INSERT INTO sentence VALUES (?,?,?,?,?,?,?,?,?)", [
     (r[0], r[1], r[2], r[3], r[4], r[5], r[6] if contains(ans[r[0]], r[6]) else None, r[7], r[8])
     for r in s.execute("SELECT * FROM sentence")])
-for t, n in (("sentence_answer", 4), ("chapter", 3), ("chapter_pattern", 3)):
+for t, n in (("sentence_answer", 4), ("chapter_pattern", 3)):
     rows = s.execute(f"SELECT * FROM {t}").fetchall()
     o.executemany(f"INSERT INTO {t} VALUES ({','.join('?'*n)})", rows)
+o.executemany("INSERT INTO chapter(chapter_id, level, n_patterns) VALUES (?,?,?)", s.execute("SELECT * FROM chapter").fetchall())
+# 상황별 로드맵(어휘 카드): 패턴 로드맵 뒤에 별도 ID 대역으로 붙인다
+spec9 = importlib.util.spec_from_file_location("e9", ROOT / "tools" / "etl" / "e9_lexical_chapters.py")
+e9 = importlib.util.module_from_spec(spec9); spec9.loader.exec_module(e9)
+print("상황별 로드맵:", e9.append(s, o))
 h = hashlib.sha256()
-for t in ("pattern", "sentence", "sentence_answer", "chapter", "chapter_pattern"):
+for t in ("pattern", "sentence", "sentence_answer", "chapter", "chapter_pattern", "roadmap"):
     for r in o.execute(f"SELECT * FROM {t} ORDER BY 1,2"): h.update(repr(r).encode())
-o.execute("INSERT INTO pack_manifest VALUES ('pack-personal','0.2.0','original','2026-11-19',?)", (h.hexdigest(),))
+o.execute("INSERT INTO pack_manifest VALUES ('pack-personal','0.4.0','original,own','2026-11-20',?)", (h.hexdigest(),))
 o.commit()
 print("must_use 비움:", o.execute("SELECT COUNT(*) FROM sentence WHERE must_use IS NULL").fetchone()[0])
 for t in ("pattern", "sentence", "chapter", "chapter_pattern"):

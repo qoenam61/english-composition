@@ -18,6 +18,18 @@ describe.skipIf(!existsSync(PACK))("pack-personal 통합", () => {
       for (const id of c.patternIds) expect((await repo.sentences(id, ["original", "own"])).length).toBeGreaterThan(0);
     }
   });
+  it("상황별 로드맵은 패턴 로드맵과 ID가 겹치지 않고 문장이 있다", async () => {
+    const maps = await repo.roadmaps!();
+    expect(maps[0]).toEqual({ id: "pattern", label: "패턴 학습 로드맵" }); expect(maps.length).toBe(10);
+    const patternIds = new Set((await repo.chapters()).flatMap((c) => c.patternIds));
+    let total = 250;
+    for (const m of maps.slice(1)) {
+      const cs = await repo.chapters(m.id); total += cs.length; expect(cs.length).toBeGreaterThan(0);
+      for (const c of cs) { expect(c.roadmap).toBe(m.id); for (const id of c.patternIds) expect(patternIds.has(id)).toBe(false); }
+      const first = cs[0]!.patternIds[0]!; expect((await repo.sentences(first, ["original"])).length).toBe(1);
+    }
+    expect((await repo.chapters("*")).length).toBe(total);
+  });
   it("첫 챕터를 정답 입력으로 끝까지 완주한다(실데이터)", async () => {
     const ch = (await repo.chapters())[0]!;
     const sentences = new Map<number, number[]>(); const answers = new Map<number, string[]>();

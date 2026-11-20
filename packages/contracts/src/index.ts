@@ -11,10 +11,13 @@ export type AppEvent = AnswerSubmitted | AttemptGraded | PatternCompleted | Chap
 // ---- 포트 ----
 export interface PatternRef { patternId: number; template: string; level: string }
 export interface SentenceRef { sentenceId: number; patternId: number; track: "original" | "own"; en: string; ko: string; context?: string; mustUse?: string; answers: string[] }
-export interface ChapterRef { chapterId: number; level: string; patternIds: number[] }
+export interface ChapterRef { chapterId: number; level: string; patternIds: number[]; roadmap?: string }
+export interface RoadmapRef { id: string; label: string }
 
 export interface ContentRepository {
-  chapters(): Promise<ChapterRef[]>;
+  /** roadmap 생략 = 패턴 로드맵, "*" = 전체(챕터 ID로 찾을 때). */
+  chapters(roadmap?: string): Promise<ChapterRef[]>;
+  roadmaps?(): Promise<RoadmapRef[]>;
   pattern(id: number): Promise<PatternRef | undefined>;
   sentences(patternId: number, enabledTracks: ReadonlyArray<"original" | "own">): Promise<SentenceRef[]>;
 }

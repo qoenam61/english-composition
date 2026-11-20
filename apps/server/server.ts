@@ -224,21 +224,23 @@ createServer(async (req, res) => {
       deleteAccount(sess.u); res.setHeader("set-cookie", clearCookie("epa_s")); return json(res, 200, { ok: true });
     }
     if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: PROVIDERS.map((x) => ({ name: x.name, label: x.label, enabled: loginProviders.some((y) => y.name === x.name) })) });
+    const rmParam = (u: URL) => (isAdmin ? u.searchParams.get("roadmap") ?? undefined : "pattern"); // 비관리자는 패턴 로드맵만(상황별 주제는 own 문장이 없다)
     const ent = entryFor(userId, isAdmin); const study = ent.study;
-    if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
+    if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined, rmParam(url)); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
     const anonBlocked = !authed && !ent.free; // 비로그인은 자유훈련을 시작한 뒤에만 카드·제출·힌트를 쓸 수 있다
     if (url.pathname === "/api/next") return json(res, 200, anonBlocked ? { card: null, summary: null } : { card: study.next() ?? null, summary: study.practiceSummary() ?? null });
     if (anonBlocked && (url.pathname === "/api/submit" || url.pathname === "/api/hint")) return json(res, 401, { error: "login required" });
     if (url.pathname === "/api/practice") {
       const k = url.searchParams.get("kind"); const sid = url.searchParams.get("sentence");
-      const opts = { level: url.searchParams.get("level") ?? undefined, n: url.searchParams.get("n") ? Number(url.searchParams.get("n")) : undefined, sentenceId: sid ? Number(sid) : undefined };
+      const opts = { level: url.searchParams.get("level") ?? undefined, n: url.searchParams.get("n") ? Number(url.searchParams.get("n")) : undefined, sentenceId: sid ? Number(sid) : undefined, roadmap: rmParam(url) };
       if (!authed && k !== "free") return json(res, 401, { error: "login required" });
       const r = k === "weak" || k === "free" ? await study.startPractice(k, opts) : { ok: false, reason: "알 수 없는 훈련" };
       if (!authed) ent.free = !!(r as { ok?: boolean }).ok;
       if (!isAdmin && (r as { ok?: boolean }).ok === false) return json(res, 200, { ok: false, reason: "공개용 콘텐츠를 준비 중이에요. 곧 열릴 예정이에요." });
       return json(res, 200, r);
     }
+    if (url.pathname === "/api/roadmaps") return json(res, 200, isAdmin ? (await content.roadmaps?.()) ?? [] : ((await content.roadmaps?.()) ?? []).filter((r) => r.id === "pattern")); // 상황별(어휘 카드) 주제는 원본 카드라 관리자에게만
     if (url.pathname === "/api/config") return json(res, 200, { tts: (await ttsServerUp()) ? "server" : "browser" });
     if (url.pathname === "/api/tts") {
       const text = (url.searchParams.get("text") ?? "").trim();
@@ -253,7 +255,7 @@ createServer(async (req, res) => {
       }
       res.writeHead(200, { ...base, "content-length": audio.length }); return res.end(audio);
     }
-    if (url.pathname === "/api/overview") return isAdmin ? json(res, 200, await study.overview()) : json(res, 403, { error: "content pending" }); // 챕터 구성은 원본 책의 구조라 관리자에게만 보인다
+    if (url.pathname === "/api/overview") return authed ? json(res, 200, await study.overview(rmParam(url))) : json(res, 403, { error: "login required" });
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
     if (url.pathname === "/api/practice/exit") { study.exitPractice(); if (!authed) ent.free = false; return json(res, 200, { ok: true }); }
     if (url.pathname === "/api/notes") return json(res, 200, await study.notesView());

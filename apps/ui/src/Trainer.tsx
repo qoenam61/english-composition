@@ -141,7 +141,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
       {card && (
         <>
           <div className="flex items-center justify-between gap-3 mb-2 text-sm">
-            <span className="font-extrabold text-t1 truncate">{card.mode === "chapter" ? `${card.level} · 챕터 ${card.chapterId}` : card.level}</span>
+            <span className="font-extrabold text-t1 truncate">{card.mode === "chapter" ? `${card.level} · 챕터 ${card.chapterNo}` : card.level}</span>
             {ttsSupported() && <button type="button" onClick={toggleTts} aria-pressed={tts} className={`shrink-0 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-extrabold border-b-2 ${tts ? "bg-sky text-white border-sky-d" : "bg-surface text-t3 border-app"}`}>{tts ? "🔊 음성 ON" + (ttsInfo() ? " · " + ttsInfo() : "") : "🔇 음성 OFF"}</button>}
             <div className="flex items-center gap-2 shrink-0" aria-label="남은 시간">
               <div className="w-20 h-2 rounded-full bg-surface overflow-hidden"><div className={`h-full ${gauge} transition-[width] duration-100`} style={{ width: `${res ? 0 : frac * 100}%` }} /></div>

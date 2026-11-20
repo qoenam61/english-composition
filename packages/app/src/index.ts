@@ -7,7 +7,7 @@ import { nextDue, type ChapterBoard, type PatternProgress } from "@app/domain";
 
 export interface CardView {
   sentenceId: number; patternId: number; ko: string; context?: string; review: boolean;
-  hintAvailable: boolean; timeLimitSec: number; patternNo: number; patternTemplate: string; level: string; board: ChapterBoard; chapterId: number; mode: "chapter" | PracticeKind;
+  hintAvailable: boolean; timeLimitSec: number; patternNo: number; patternTemplate: string; level: string; board: ChapterBoard; chapterId: number; chapterNo: number; mode: "chapter" | PracticeKind;
 }
 export type PracticeKind = "weak" | "free";
 export interface PracticeSummary { kind: PracticeKind; total: number; answered: number; correct: number; avgMs: number; firstTryPct: number; grade: "S" | "A" | "B" | "C"; missedPatternIds: number[]; patterns: string[] }
@@ -31,6 +31,7 @@ export class StudyService {
   private notes: NotesState = emptyNotes();
   private session?: Session;
   private chapter?: ChapterRef;
+  private chapterNo = 0; // 속한 로드맵 안에서의 순번(화면 표시용)
   private sentences = new Map<number, SentenceRef>();
   private progress = new Map<number, PatternProgress>();
   private templates = new Map<number, string>();
@@ -40,12 +41,13 @@ export class StudyService {
   constructor(private d: StudyDeps) {}
 
   /** 아직 끝나지 않은 첫 챕터를 열어 이어하기 한다. */
-  async open(chapterId?: number): Promise<ChapterBoard> {
-    const all = await this.d.content.chapters();
+  async open(chapterId?: number, roadmap?: string): Promise<ChapterBoard> {
+    const all = await this.d.content.chapters(chapterId !== undefined ? "*" : roadmap); // 챕터 ID는 로드맵 전체에서 유일하다
     this.practice = undefined;
     this.progress = await this.d.store.progress(this.d.userId);
     const isDone = (c: ChapterRef) => c.patternIds.every((id) => this.progress.get(id)?.state === "done");
     this.chapter = (chapterId !== undefined ? all.find((c) => c.chapterId === chapterId) : all.find((c) => !isDone(c))) ?? all[all.length - 1]!;
+    this.chapterNo = all.filter((c) => (c.roadmap ?? "pattern") === (this.chapter!.roadmap ?? "pattern")).findIndex((c) => c.chapterId === this.chapter!.chapterId) + 1;
     const byPattern = new Map<number, number[]>(); this.sentences.clear();
     this.templates.clear();
     for (const id of this.chapter.patternIds) {
@@ -85,7 +87,7 @@ export class StudyService {
   }
 
   /** 연습 시작. weak = 오답 패턴 집중(시도 기록·노트에 반영), free = 자유 훈련(아무것도 기록하지 않는 샌드박스, 난이도 필터). */
-  async startPractice(kind: PracticeKind, opts: { n?: number; level?: string; patternIds?: number[]; sentenceId?: number } = {}): Promise<{ ok: true; total: number } | { ok: false; reason: string }> {
+  async startPractice(kind: PracticeKind, opts: { n?: number; level?: string; patternIds?: number[]; sentenceId?: number; roadmap?: string } = {}): Promise<{ ok: true; total: number } | { ok: false; reason: string }> {
     if (!this.chapter) await this.open();
     await this.rebuildNotes(); // 진도 맵은 챕터 세션이 공유하므로 교체하지 않는다
     const n = opts.n ?? (kind === "weak" ? 5 : 10);
@@ -93,15 +95,21 @@ export class StudyService {
     if (opts.patternIds) order = opts.patternIds;
     else if (kind === "weak") order = sortedWrong(this.notes).map((w) => w.patternId).slice(0, n);
     else {
-      const all = await this.d.content.chapters();
-      const pool = all.filter((c) => !opts.level || opts.level === "all" || c.level === opts.level).flatMap((c) => c.patternIds);
+      const rm = opts.roadmap ?? "pattern"; const all = await this.d.content.chapters(rm); // 자유 훈련도 주제(로드맵)별로 고를 수 있다
+      const anyLevel = !opts.level || opts.level === "all";
+      let pool: number[];
+      if (rm === "pattern" || anyLevel) pool = all.filter((c) => anyLevel || c.level === opts.level).flatMap((c) => c.patternIds);
+      else { // 주제 챕터는 여러 레벨이 섞일 수 있어 카드 자체의 레벨로 거른다
+        pool = [];
+        for (const id of all.flatMap((c) => c.patternIds)) if ((await this.d.content.pattern(id))?.level === opts.level) pool.push(id);
+      }
       const fresh = await this.d.store.progress(this.d.userId);
       const seen = pool.filter((id) => (fresh.get(id)?.seenSentenceIds.length ?? 0) > 0);
       const rest = pool.filter((id) => !seen.includes(id));
       const shuffle = <T,>(a: T[]) => [...a].sort(() => this.d.rng() - 0.5);
       order = [...shuffle(seen), ...shuffle(rest)].slice(0, n);
     }
-    if (order.length === 0) return { ok: false, reason: kind === "weak" ? "오답노트가 비어 있어요. 먼저 학습을 진행해 보세요." : "해당 난이도의 문제가 없어요." };
+    if (order.length === 0) return { ok: false, reason: kind === "weak" ? "오답노트가 비어 있어요. 먼저 학습을 진행해 보세요." : "해당 난이도·주제의 문제가 없어요." };
     const bank = new Map<number, SentenceRef[]>();
     for (const pid of order) bank.set(pid, await this.sentencesOf(pid));
     const queue: Array<{ sentenceId: number; patternId: number }> = []; const used = new Set<number>();
@@ -145,7 +153,7 @@ export class StudyService {
     const q = p.queue[p.idx]; if (!q) { this.current = undefined; return undefined; }
     this.current = { sentenceId: q.sentenceId, patternId: q.patternId, review: false };
     const s = this.sentences.get(q.sentenceId)!;
-    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: false, hintAvailable: !!(s.mustUse || this.templates.get(s.patternId)), timeLimitSec: timeLimitSec(s.en), patternNo: p.idx + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: p.kind === "weak" ? "집중 공략" : p.level === "all" ? "자유 훈련" : `자유 훈련 · ${p.level}`, board: this.practiceBoard(), chapterId: 0, mode: p.kind };
+    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: false, hintAvailable: !!(s.mustUse || this.templates.get(s.patternId)), timeLimitSec: timeLimitSec(s.en), patternNo: p.idx + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: p.kind === "weak" ? "집중 공략" : p.level === "all" ? "자유 훈련" : `자유 훈련 · ${p.level}`, board: this.practiceBoard(), chapterId: 0, chapterNo: 0, mode: p.kind };
   }
 
   private async submitPractice(sentenceId: number, input: string, usedHint: boolean, elapsedMs: number): Promise<SubmitView> {
@@ -163,19 +171,20 @@ export class StudyService {
   }
 
   /** 로드맵: 챕터별 진행 상태. 잠금 = 처음 미완료 챕터 이후. */
-  async overview() {
-    const all = await this.d.content.chapters(); const prog = await this.d.store.progress(this.d.userId);
+  async overview(roadmap = "pattern") {
+    const all = await this.d.content.chapters(roadmap);
+    const roadmaps = (await this.d.content.roadmaps?.()) ?? [{ id: "pattern", label: "패턴 학습 로드맵" }]; const prog = await this.d.store.progress(this.d.userId);
     await this.rebuildNotes();
     const rows = all.map((c) => { const done = c.patternIds.filter((id) => prog.get(id)?.state === "done").length; return { chapterId: c.chapterId, level: c.level, total: c.patternIds.length, done }; });
     const cur = rows.findIndex((r) => r.done < r.total);
-    const chapters = rows.map((r, i) => ({ ...r, status: r.done >= r.total ? "done" as const : i === cur ? "current" as const : "locked" as const }));
+    const chapters = rows.map((r, i) => ({ ...r, no: i + 1, status: r.done >= r.total ? "done" as const : i === cur ? "current" as const : "locked" as const }));
     const st = await this.statsView();
-    return { chapters, currentChapterId: cur < 0 ? undefined : rows[cur]!.chapterId, activeChapterId: this.chapter?.chapterId, header: { streakDays: st.streakDays, mastered: this.notes.completed.size, wrongCount: this.notes.wrong.size }, totalPatterns: rows.reduce((a, r) => a + r.total, 0), totalDone: rows.reduce((a, r) => a + r.done, 0) };
+    return { roadmap, roadmaps, chapters, currentChapterId: cur < 0 ? undefined : rows[cur]!.chapterId, activeChapterId: this.chapter?.chapterId, header: { streakDays: st.streakDays, mastered: this.notes.completed.size, wrongCount: this.notes.wrong.size }, totalPatterns: rows.reduce((a, r) => a + r.total, 0), totalDone: rows.reduce((a, r) => a + r.done, 0) };
   }
 
   /** 완료 취소: 연속 정답·복습 일정을 지우고 원래 챕터 대기열로 되돌린다. 열려 있던 챕터를 돌려준다. */
   async uncomplete(patternId: number): Promise<{ chapterId: number }> {
-    const all = await this.d.content.chapters();
+    const all = await this.d.content.chapters("*");
     const ch = all.find((c) => c.patternIds.includes(patternId)); if (!ch) throw new Error("패턴을 찾을 수 없다");
     const prog = await this.d.store.progress(this.d.userId); const cur = prog.get(patternId);
     await this.d.store.markUndone(this.d.userId, patternId, this.d.now());
@@ -190,7 +199,7 @@ export class StudyService {
     if (!this.session || !this.chapter) throw new Error("open() 먼저");
     const p = this.session.next(); if (!p) { this.current = undefined; return undefined; }
     this.current = p; const s = this.sentences.get(p.sentenceId)!;
-    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: p.review, hintAvailable: !!(s.mustUse || this.templates.get(s.patternId)), timeLimitSec: timeLimitSec(s.en), patternNo: this.chapter.patternIds.indexOf(s.patternId) + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: this.chapter.level, board: this.session.board(), chapterId: this.chapter.chapterId, mode: "chapter" };
+    return { sentenceId: s.sentenceId, patternId: s.patternId, ko: s.ko, context: s.context, review: p.review, hintAvailable: !!(s.mustUse || this.templates.get(s.patternId)), timeLimitSec: timeLimitSec(s.en), patternNo: this.chapter.patternIds.indexOf(s.patternId) + 1, patternTemplate: this.templates.get(s.patternId) ?? "", level: this.chapter.level, board: this.session.board(), chapterId: this.chapter.chapterId, chapterNo: this.chapterNo, mode: "chapter" };
   }
 
   /** 힌트 = 필수 구문, 없으면 패턴 표현. 평소에는 화면에 패턴 표현을 보이지 않는다. */
