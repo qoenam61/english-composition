@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Overview } from "./api";
+import { AccountButton } from "./Account";
 import { Completed, WrongNotes } from "./Notes";
 import { Practice } from "./Practice";
 import { Roadmap } from "./Roadmap";
@@ -36,7 +37,7 @@ function Shell() {
   };
   const h = ov?.header;
   const badge = h && h.wrongCount > 0 ? <span className="ml-1 min-w-5 h-5 px-1 rounded-full bg-red text-white text-[11px] font-extrabold inline-grid place-items-center">{h.wrongCount}</span> : null;
-  const stats = <div className="flex items-center gap-2 text-sm font-extrabold"><span className="rounded-lg bg-orange/15 text-orange px-2.5 py-1">🔥 {h?.streakDays ?? 0}일</span><span className="rounded-lg bg-sky/15 text-sky px-2.5 py-1">💎 {h?.mastered ?? 0}개</span></div>;
+  const stats = <div className="flex items-center gap-2 text-sm font-extrabold"><span className="rounded-lg bg-orange/15 text-orange px-2.5 py-1">🔥 {h?.streakDays ?? 0}일</span><span className="rounded-lg bg-sky/15 text-sky px-2.5 py-1">💎 {h?.mastered ?? 0}개</span><AccountButton /></div>;
 
   return (
     <div className="min-h-[100dvh] bg-app text-t2 flex flex-col">

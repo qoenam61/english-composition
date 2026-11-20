@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 
 // 프로젝트 루트의 .env 를 읽는다(이미 설정된 환경변수가 우선, 파일이 없으면 무시). .env 는 git 에서 제외돼 있다.
 try { process.loadEnvFile(new URL("../../.env", import.meta.url)); } catch { /* .env 없음 */ }
-import { existsSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SqliteContentRepository } from "@app/adapter-content";
@@ -11,6 +12,7 @@ import { GradingService } from "@app/grading";
 import { ChainJudge, ClaudeCliJudge, GeminiJudge, OpenAiCompatJudge } from "@app/adapter-llm";
 import type { LlmJudge } from "@app/contracts";
 import { StudyService } from "@app/app";
+import { PROVIDERS, accountId, authorizeUrl, cookieHeader, enabledProviders, identify, newState, parseCookies, sameState, signSession, verifySession } from "./auth.js";
 import { parseOwners, userIdFor } from "./identity.js";
 
 // 조립 지점(composition root): 어떤 어댑터를 쓸지는 여기서만 정한다.
@@ -69,6 +71,48 @@ async function ttsAudio(text: string, role: string): Promise<Buffer> {
 //   OWNER_IPS=쉼표로 구분한 본인 IP(예: 집·폰). 본인 IP 는 접속해서 /api/whoami 로 확인한다. 휴대폰 데이터망처럼 IP가 바뀌는 환경은 계정이 새로 생긴다(한계).
 const grading = new GradingService(buildJudge()); // 판정 캐시는 사용자와 무관하므로 공유
 const owners = parseOwners(process.env.OWNER_IPS);
+// ---- 로그인(선택) ----
+// 접속자 식별 순서: ① 로그인 쿠키(소셜·게스트) ② 이 컴퓨터 직접 접속·OWNER_IPS ③ 접속 IP 계정. 로그인하지 않아도 ③으로 쓸 수 있다.
+//   PUBLIC_BASE_URL=https://공개주소 (콜백 주소를 이것으로 고정한다. Host 헤더는 쓰지 않는다) / OAUTH_<GOOGLE|KAKAO|NAVER|GITHUB|DISCORD|MICROSOFT|FACEBOOK>_CLIENT_ID, _CLIENT_SECRET
+//   OWNER_ACCOUNTS=기존 기록(me)에 연결할 계정 ID(로그인 후 /api/whoami 의 account 값). SESSION_SECRET 이 없으면 data/session-secret 에 무작위 값을 만들어 쓴다.
+const publicBase = (process.env.PUBLIC_BASE_URL ?? "").replace(/\/$/, "");
+const secureCookies = publicBase.startsWith("https://");
+const loginProviders = enabledProviders(process.env);
+const ownerAccounts = new Set((process.env.OWNER_ACCOUNTS ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+function loadSessionSecret(): string {
+  if ((process.env.SESSION_SECRET ?? "").length >= 16) return process.env.SESSION_SECRET!;
+  const f = root + "data/session-secret";
+  if (existsSync(f)) { const v = readFileSync(f, "utf8").trim(); if (v.length >= 32) return v; }
+  mkdirSync(root + "data", { recursive: true }); const v = randomBytes(32).toString("hex"); writeFileSync(f, v, { mode: 0o600 }); return v;
+}
+const sessionSecret = loadSessionSecret();
+const SESSION_DAYS = 30;
+const redirect = (res: any, to: string, cookies: string[] = []) => { res.writeHead(302, { location: to, "set-cookie": cookies, "cache-control": "no-store" }); res.end(); };
+const startSession = (u: string, p: string) => cookieHeader("epa_s", signSession(sessionSecret, { u, p, exp: Date.now() + SESSION_DAYS * 86400_000 }), { maxAge: SESSION_DAYS * 86400, secure: secureCookies });
+const clearCookie = (n: string) => cookieHeader(n, "", { maxAge: 0, secure: secureCookies });
+
+async function handleAuth(req: any, res: any, url: URL): Promise<void> {
+  const parts = url.pathname.split("/").filter(Boolean); // ["auth", "<제공사|guest|logout>", "start|callback"]
+  const seg = parts[1] ?? "";
+  if (req.method === "POST" && seg === "guest") { res.writeHead(200, { "content-type": "application/json", "set-cookie": startSession("g-" + randomBytes(8).toString("hex"), "guest") }); res.end('{"ok":true}'); return; }
+  if (req.method === "POST" && seg === "logout") { res.writeHead(200, { "content-type": "application/json", "set-cookie": clearCookie("epa_s") }); res.end('{"ok":true}'); return; }
+  const p = loginProviders.find((x) => x.name === seg);
+  if (!p || req.method !== "GET") return redirect(res, "/?login=failed");
+  if (parts[2] === "start") {
+    const st = newState();
+    return redirect(res, authorizeUrl(p, process.env, st.state, st.challenge), [cookieHeader("epa_st", st.state, { maxAge: 600, secure: secureCookies }), cookieHeader("epa_cv", st.verifier, { maxAge: 600, secure: secureCookies })]);
+  }
+  if (parts[2] === "callback") {
+    const c = parseCookies(req.headers.cookie); const wipe = [clearCookie("epa_st"), clearCookie("epa_cv")];
+    const code = url.searchParams.get("code");
+    if (url.searchParams.get("error") || !code || !sameState(c.epa_st, url.searchParams.get("state"))) return redirect(res, "/?login=failed", wipe);
+    try {
+      const sub = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
+      return redirect(res, "/", [...wipe, startSession(accountId(p.name, sub), p.name)]);
+    } catch (e) { console.error("로그인 실패:", p.name, e instanceof Error ? e.message : "unknown"); return redirect(res, "/?login=failed", wipe); }
+  }
+  return redirect(res, "/?login=failed");
+}
 const MAX_USERS = 300; // 메모리에 올려 두는 계정 수 상한(넘으면 가장 오래 안 쓴 것부터 내린다. 기록은 DB에 남아 있다)
 const users = new Map<string, { study: StudyService; opened: boolean }>();
 function entryFor(userId: string) {
@@ -97,11 +141,14 @@ const body = (req: any) => new Promise<any>((ok) => { let s = ""; req.on("data",
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", "http://x");
+    if (url.pathname.startsWith("/auth/")) return await handleAuth(req, res, url);
     if (req.method === "GET" && !url.pathname.startsWith("/api/") && serveStatic(url.pathname, res)) return;
     if (req.method === "GET" && url.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(legacyPage); }
     const who = userIdFor(req.headers, req.socket.remoteAddress, owners);
-    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: who.userId === "me" ? "기존 기록(me)" : who.userId, owner: who.userId === "me" });
-    const ent = entryFor(who.userId); const study = ent.study;
+    const sess = verifySession(sessionSecret, parseCookies(req.headers.cookie).epa_s, Date.now());
+    const userId = sess ? (ownerAccounts.has(sess.u) ? "me" : sess.u) : who.userId;
+    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: loginProviders.map((x) => ({ name: x.name, label: x.label })) });
+    const ent = entryFor(userId); const study = ent.study;
     if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
     if (url.pathname === "/api/next") return json(res, 200, { card: study.next() ?? null, summary: study.practiceSummary() ?? null });

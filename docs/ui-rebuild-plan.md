@@ -26,3 +26,7 @@
 - 2026-11-20: TTS 토글(음성 ON 시 질문 재생이 끝나면 타이머 시작, 시간 초과·오류 안전장치 포함), 정답 확인 시 질문→모범 정답 순차 재생, 제한 시간 3배, 2단계 채점(로컬 정규화 → LLM) + 패턴 미카운트 정답(OK_NO_COUNT) + 한 줄 코멘트, 오답노트·학습완료 10개씩 페이지 이동, 첫 화면을 챕터 로드맵으로 변경(학습하기 탭은 숨김).
 - 미검증: 실기기 TTS 동작(브라우저별 음성·자동재생 차단), OK_NO_COUNT 판정의 실제 LLM 정확도(단위 테스트는 가짜 판정기로 확인).
 - 2026-11-20: 접속 IP 기준 계정(`apps/server/identity.ts`). 이 컴퓨터 직접 접속과 `OWNER_IPS`의 IP는 기존 기록(me), 그 외는 IP 해시 계정. IPv6는 앞 64비트로 묶음. 한계: IP가 바뀌면(휴대폰 데이터망·와이파이 전환) 다른 계정으로 보이고, 같은 공유기를 쓰는 사람은 같은 계정이 된다. 자유훈련 난이도는 A1~C2 전체로 확대.
+- 2026-11-20: 소셜 로그인(`apps/server/auth.ts`, `apps/ui/src/Account.tsx`). 제공사 7종(Google·카카오·네이버·GitHub·Discord·Microsoft·Facebook)을 표로 정의하고, `.env`에 키가 있는 제공사만 버튼으로 나온다. 제공사에서 받는 것은 고유 ID뿐이며 해시한 계정 ID(`u-…`)만 쓴다. 로그인하지 않아도 IP 계정으로 쓸 수 있고, "이 기기 전용 계정"(게스트)도 있다.
+  - `.env`: `PUBLIC_BASE_URL=https://composition.jwopsworkflowzone.cloud`, `OAUTH_<GOOGLE|KAKAO|NAVER|GITHUB|DISCORD|MICROSOFT|FACEBOOK>_CLIENT_ID` / `_CLIENT_SECRET`(카카오는 시크릿 선택), 기존 기록 연결은 `OWNER_ACCOUNTS=<로그인 후 /api/whoami 의 sessionAccount>`. 세션 비밀은 `data/session-secret`에 자동 생성(또는 `SESSION_SECRET`).
+  - 콜백 주소: `https://composition.jwopsworkflowzone.cloud/auth/<제공사>/callback`
+  - 검증 범위: 가짜 제공사로 단위 테스트(상태값·PKCE·쿠키 서명·계정 ID)와 임시 서버 동작 확인까지. 실제 제공사 키로 로그인해 본 것은 없다. 제공사별 주소·필드는 문서 기억 기준이라 첫 로그인 때 확인이 필요하다.
