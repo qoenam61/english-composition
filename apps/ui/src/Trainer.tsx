@@ -3,7 +3,7 @@ import { api, type Card as CardT, type Submit, type Summary } from "./api";
 import { diffWords } from "./diff";
 /** 읽을 문맥: "Q: ..." 는 상대 말, "(...)" 는 상황 설명이라 괄호를 벗겨 읽는다. */
 const speakable = (c?: string | null): string => (!c ? "" : c.startsWith("Q: ") ? c.slice(3) : c.startsWith("(") && c.endsWith(")") ? c.slice(1, -1) : "");
-import { cancelSpeech, setTtsEnabled, speak, speakSequence, ttsEnabled, ttsInfo, ttsSupported, unlockAudio } from "./tts";
+import { cancelSpeech, setTtsEnabled, setTtsNotifier, speak, speakSequence, ttsEnabled, ttsInfo, ttsSupported, unlockAudio } from "./tts";
 import { Badge, Btn, Card, Modal, useToast } from "./ui";
 
 type Graded = Extract<Submit, { kind: "graded" }>;
@@ -95,6 +95,13 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
     });
   };
   const replay = () => { const q = speakable(card?.context); if (!q) return; cancelSpeech(); setSpeaking(true); const t0 = Date.now(); void speak(q).then(() => { setSpeaking(false); if (Date.now() - t0 < 400) toast("음성이 재생되지 않았어요. 무음 모드·미디어 볼륨·브라우저의 영어 음성 설치를 확인해 주세요", "warn"); }); };
+  useEffect(() => { setTtsNotifier((m) => toast(m, "info")); return () => setTtsNotifier(null); }, []);
+  useEffect(() => { // 소리가 막혀 대기 중이면 화면 어디든 누를 때(사용자 동작 안에서) 질문을 읽는다
+    if (!waiting) return;
+    const h = () => readQuestion();
+    window.addEventListener("click", h); window.addEventListener("touchend", h);
+    return () => { window.removeEventListener("click", h); window.removeEventListener("touchend", h); };
+  }, [waiting]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggleTts = () => { const on = !tts; setTts(on); setTtsEnabled(on); if (!on) { setSpeaking(false); if (pending.current) { const p = pending.current; pending.current = null; setWaiting(false); p.start(); } } } // OFF 면 재생 중 음성 중단, 대기 중이던 카운트다운은 즉시 시작; // OFF 면 재생 중인 음성도 즉시 중단
   const endNow = async () => { const r = await api.next(); setCard(null); setSummary(r.summary); };
 
@@ -159,6 +166,7 @@ export function Trainer({ kind, onChanged, onRestart, onGoRoadmap, onGoNotes }: 
               {tts && ttsSupported() && !res && <button type="button" onClick={() => { unlockAudio(); if (pending.current) readQuestion(); else replay(); }} aria-label="질문 듣기" className="shrink-0 w-9 h-9 rounded-full bg-surface border-b-2 border-app text-base">🔊</button>}
             </div>
           )}
+          {tts && !res && <div className="mb-1 text-[11px] text-t3">음성 엔진: {ttsInfo()}</div>}
           {tts && waiting && !res && <div className="mb-2 text-xs font-bold text-sky">질문을 읽어 드려요. 소리가 안 나면 입력창이나 🔊 버튼을 눌러 주세요 (읽은 뒤에 카운트다운이 시작돼요)</div>}
           <div className="text-xs font-bold text-t3 mb-1.5">내가 하고 싶은 말</div>
           <Card className="px-4 py-4 mb-3 text-left"><p className="text-lg md:text-xl font-bold text-t1 leading-snug">{card.ko}</p></Card>
