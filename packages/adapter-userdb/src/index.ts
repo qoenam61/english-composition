@@ -8,6 +8,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof
 /** 사용자 진도 저장소(SQLite). attempt 만 원시 기록이고 나머지는 파생 가능한 상태다. */
 export class SqliteUserStore implements UserStore {
   private db: DB;
+  close(): void { try { this.db.close(); } catch { /* 이미 닫힘 */ } }
   /** 관리자용 요약: 계정별 시도 수·정답 수·마지막 접속·완료 패턴 수. 입력 문장 등 내용은 포함하지 않는다. */
   adminSummary(): Array<{ userId: string; attempts: number; passed: number; lastAt: number; completed: number }> {
     return (this.db.prepare(`SELECT a.user_id AS userId, COUNT(*) AS attempts, SUM(a.verdict IN ('PASS','MINOR_TYPO')) AS passed, MAX(a.at) AS lastAt,

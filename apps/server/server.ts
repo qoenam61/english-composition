@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 // 프로젝트 루트의 .env 를 읽는다(이미 설정된 환경변수가 우선, 파일이 없으면 무시). .env 는 git 에서 제외돼 있다.
 try { process.loadEnvFile(new URL("../../.env", import.meta.url)); } catch { /* .env 없음 */ }
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SqliteContentRepository } from "@app/adapter-content";
@@ -18,7 +18,16 @@ import { parseOwners, userIdFor } from "./identity.js";
 // 조립 지점(composition root): 어떤 어댑터를 쓸지는 여기서만 정한다.
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const content = new SqliteContentRepository(process.env.PACK ?? root + "dist/pack-personal.sqlite");
-const store = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
+// 저장소: 계정마다 DB 파일을 따로 둔다(data/users/<계정ID>.sqlite). 기존 기록("me")만 data/user.sqlite 를 쓰고, 로그인하지 않은 방문자는 저장하지 않는 메모리 DB를 쓴다.
+const meStore = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
+const usersDir = process.env.USERS_DIR ?? root + "data/users/";
+const validAccount = (id: string) => /^u-[0-9a-f]{16}$/.test(id); // 파일 이름이 되므로 형식을 엄격히 검사한다(경로 조작 방지)
+const userFile = (id: string) => usersDir + id + ".sqlite";
+function storeFor(userId: string): SqliteUserStore {
+  if (userId === "me") return meStore;
+  if (validAccount(userId)) { mkdirSync(usersDir, { recursive: true }); return new SqliteUserStore(userFile(userId)); }
+  return new SqliteUserStore(); // 비로그인 방문자: 메모리(저장 안 함)
+}
 // 판정·정정·코멘트 설정(환경변수). JUDGE_CHAIN=앞에서부터 시도할 판정기(쉼표 구분). 기본은 무료 모델을 낮은 단계부터:
 //   groq-qwen → gemini(flash-lite 자동 선택) → claude(haiku, 구독 한도, 마지막 비상용). 같은 Groq 의 다른 모델(groq-120b, groq-20b)은 한도를 모델별로 따로 주는지 확인하지 못해 기본에서 뺐고, JUDGE_CHAIN 으로 넣을 수 있다(20b 는 8건 시험에서 정답을 오답 처리하고 응답 해석도 1건 실패).
 //   Groq 한도: 모델마다 헤더에 하루 1,000회·분당 8,000토큰이 표시되지만, 한 모델이 소진되면 다른 모델도 막히는지는 확인하지 못했다. 한도·오류가 난 단계는 60초 쉬고 다음으로 넘어간다.
@@ -95,8 +104,7 @@ const isAdminAccount = (id: string) => ownerAccounts.has(id) || savedAdmins.has(
 const saveJson = (f: string, v: unknown) => { mkdirSync(root + "data", { recursive: true }); writeFileSync(f, JSON.stringify(v), { mode: 0o600 }); };
 const noteLogin = (id: string, provider: string) => { const t = Date.now(); accounts[id] = { provider, firstAt: accounts[id]?.firstAt ?? t, lastAt: t }; saveJson(accFile, accounts); };
 const SESSION_DAYS = 30;
-// 로그인 필수(기본 켬): 소셜 로그인한 사람과 이 컴퓨터 직접 접속만 API 를 쓸 수 있다. 끄려면 LOGIN_REQUIRED=0 (그때만 게스트·IP 계정 허용).
-const loginRequired = process.env.LOGIN_REQUIRED !== "0";
+// 로그인하지 않은 방문자는 자유훈련만 쓸 수 있다(기록 없음). 나머지 기능은 로그인 후.
 const redirect = (res: any, to: string, cookies: string[] = []) => { res.writeHead(302, { location: to, "set-cookie": cookies, "cache-control": "no-store" }); res.end(); };
 const startSession = (u: string, p: string) => cookieHeader("epa_s", signSession(sessionSecret, { u, p, exp: Date.now() + SESSION_DAYS * 86400_000 }), { maxAge: SESSION_DAYS * 86400, secure: secureCookies });
 const clearCookie = (n: string) => cookieHeader(n, "", { maxAge: 0, secure: secureCookies });
@@ -104,8 +112,6 @@ const clearCookie = (n: string) => cookieHeader(n, "", { maxAge: 0, secure: secu
 async function handleAuth(req: any, res: any, url: URL): Promise<void> {
   const parts = url.pathname.split("/").filter(Boolean); // ["auth", "<제공사|guest|logout>", "start|callback"]
   const seg = parts[1] ?? "";
-  if (req.method === "POST" && seg === "guest") {
-    if (loginRequired) { res.writeHead(403, { "content-type": "application/json" }); res.end('{"error":"login required"}'); return; } res.writeHead(200, { "content-type": "application/json", "set-cookie": startSession("g-" + randomBytes(8).toString("hex"), "guest") }); res.end('{"ok":true}'); return; }
   if (req.method === "POST" && seg === "logout") { res.writeHead(200, { "content-type": "application/json", "set-cookie": clearCookie("epa_s") }); res.end('{"ok":true}'); return; }
   const p = loginProviders.find((x) => x.name === seg);
   if (!p || req.method !== "GET") return redirect(res, "/?login=failed");
@@ -126,14 +132,24 @@ async function handleAuth(req: any, res: any, url: URL): Promise<void> {
   return redirect(res, "/?login=failed");
 }
 const MAX_USERS = 300; // 메모리에 올려 두는 계정 수 상한(넘으면 가장 오래 안 쓴 것부터 내린다. 기록은 DB에 남아 있다)
-const users = new Map<string, { study: StudyService; opened: boolean }>();
+const users = new Map<string, { study: StudyService; opened: boolean; free: boolean; store: SqliteUserStore }>();
+const release = (e: { store: SqliteUserStore }) => { if (e.store !== meStore) e.store.close(); };
 function entryFor(userId: string) {
   let e = users.get(userId);
   if (e) { users.delete(userId); users.set(userId, e); return e; } // 최근 사용 순서로 갱신
-  e = { study: new StudyService({ userId, content, store, grading, rng: Math.random, now: Date.now, tracks: ["original", "own"] }), opened: false };
+  const st = storeFor(userId);
+  e = { study: new StudyService({ userId, content, store: st, grading, rng: Math.random, now: Date.now, tracks: ["original", "own"] }), opened: false, free: false, store: st };
   users.set(userId, e);
-  if (users.size > MAX_USERS) users.delete(users.keys().next().value!);
+  if (users.size > MAX_USERS) { const k = users.keys().next().value!; release(users.get(k)!); users.delete(k); }
   return e;
+}
+/** 계정 삭제(탈퇴·관리자 삭제): 그 계정의 DB 파일과 로그인 목록·관리자 지정을 모두 지운다. */
+function deleteAccount(id: string): boolean {
+  if (!validAccount(id)) return false;
+  const e = users.get(id); if (e) { release(e); users.delete(id); }
+  for (const suf of ["", "-wal", "-shm", "-journal"]) rmSync(userFile(id) + suf, { force: true });
+  delete accounts[id]; saveJson(accFile, accounts); if (savedAdmins.delete(id)) saveJson(admFile, [...savedAdmins]);
+  return true;
 }
 const uiDir = root + "apps/ui/dist"; // React 빌드 결과가 있으면 그것을, 없으면 예전 단일 페이지를 쓴다
 const legacyPage = readFileSync(root + "apps/web/index.html", "utf8");
@@ -161,13 +177,18 @@ createServer(async (req, res) => {
     const userId = sess ? (ownerAccounts.has(sess.u) ? "me" : sess.u) : who.userId;
     // 관리자: 이 컴퓨터에서 직접 연 접속, 또는 OWNER_ACCOUNTS 에 적은 로그인 계정. (IP 는 공유될 수 있어 관리자 근거로 쓰지 않는다)
     const authed = !!sess || who.local;
-    if (loginRequired && !authed && url.pathname.startsWith("/api/") && url.pathname !== "/api/whoami") return json(res, 401, { error: "login required" });
+    // 비로그인: 자유훈련에 필요한 것만 허용한다.
+    const ANON_OK = ["/api/whoami", "/api/config", "/api/tts", "/api/practice", "/api/practice/exit", "/api/next", "/api/submit", "/api/hint"];
+    if (!authed && url.pathname.startsWith("/api/") && !ANON_OK.includes(url.pathname)) return json(res, 401, { error: "login required" });
     const isAdmin = (!sess && who.local) || (!!sess && isAdminAccount(sess.u));
     if (url.pathname === "/api/admin/users") {
       if (!isAdmin) return json(res, 403, { error: "forbidden" });
-      const label = (id: string) => (id === "me" ? "기존 기록(me)" : id.startsWith("u-") ? "소셜 로그인" : id.startsWith("g-") ? "게스트" : "IP 계정");
-      const sum = new Map(store.adminSummary().map((u) => [u.userId, u]));
-      const ids = new Set([...sum.keys(), ...Object.keys(accounts)]);
+      const label = (id: string) => (id === "me" ? "기존 기록(me)" : "소셜 로그인");
+      const sum = new Map<string, ReturnType<SqliteUserStore["adminSummary"]>[number]>();
+      for (const u of meStore.adminSummary()) sum.set(u.userId, u);
+      let files: string[] = []; try { files = readdirSync(usersDir).filter((f) => f.endsWith(".sqlite")).map((f) => f.slice(0, -7)).filter(validAccount); } catch { /* 아직 없음 */ }
+      for (const id of files) { const e = users.get(id); const st = e?.store ?? new SqliteUserStore(userFile(id)); const r = st.adminSummary()[0]; if (r) sum.set(id, { ...r, userId: id }); if (!e) st.close(); }
+      const ids = new Set([...sum.keys(), ...Object.keys(accounts), ...files]);
       const list = [...ids].map((id) => { const u = sum.get(id); const a = accounts[id];
         return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), admin: isAdminAccount(id), fixedAdmin: ownerAccounts.has(id) }; });
       return json(res, 200, { users: list.sort((x, y) => y.lastAt - x.lastAt) });
@@ -183,17 +204,26 @@ createServer(async (req, res) => {
       if (!isAdmin) return json(res, 403, { error: "forbidden" });
       const id = String(new URL(req.url ?? "", "http://x").searchParams.get("id") ?? "");
       if (!id || id === "me") return json(res, 400, { error: "cannot delete" });
-      store.deleteUser(id); users.delete(id); return json(res, 200, { ok: true });
+      return json(res, deleteAccount(id) ? 200 : 400, { ok: validAccount(id) });
     }
-    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, required: loginRequired, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: PROVIDERS.map((x) => ({ name: x.name, label: x.label, enabled: loginProviders.some((y) => y.name === x.name) })) });
+    if (url.pathname === "/api/account/delete" && req.method === "POST") { // 탈퇴: 내 계정의 모든 기록을 삭제하고 로그아웃한다
+      if (!sess || !validAccount(sess.u)) return json(res, 400, { error: "no account" });
+      deleteAccount(sess.u); res.setHeader("set-cookie", clearCookie("epa_s")); return json(res, 200, { ok: true });
+    }
+    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, authed, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: PROVIDERS.map((x) => ({ name: x.name, label: x.label, enabled: loginProviders.some((y) => y.name === x.name) })) });
     const ent = entryFor(userId); const study = ent.study;
     if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });
-    if (url.pathname === "/api/next") return json(res, 200, { card: study.next() ?? null, summary: study.practiceSummary() ?? null });
+    const anonBlocked = !authed && !ent.free; // 비로그인은 자유훈련을 시작한 뒤에만 카드·제출·힌트를 쓸 수 있다
+    if (url.pathname === "/api/next") return json(res, 200, anonBlocked ? { card: null, summary: null } : { card: study.next() ?? null, summary: study.practiceSummary() ?? null });
+    if (anonBlocked && (url.pathname === "/api/submit" || url.pathname === "/api/hint")) return json(res, 401, { error: "login required" });
     if (url.pathname === "/api/practice") {
       const k = url.searchParams.get("kind"); const sid = url.searchParams.get("sentence");
       const opts = { level: url.searchParams.get("level") ?? undefined, n: url.searchParams.get("n") ? Number(url.searchParams.get("n")) : undefined, sentenceId: sid ? Number(sid) : undefined };
-      return json(res, 200, k === "weak" || k === "free" ? await study.startPractice(k, opts) : { ok: false, reason: "알 수 없는 훈련" });
+      if (!authed && k !== "free") return json(res, 401, { error: "login required" });
+      const r = k === "weak" || k === "free" ? await study.startPractice(k, opts) : { ok: false, reason: "알 수 없는 훈련" };
+      if (!authed) ent.free = !!(r as { ok?: boolean }).ok;
+      return json(res, 200, r);
     }
     if (url.pathname === "/api/config") return json(res, 200, { tts: (await ttsServerUp()) ? "server" : "browser" });
     if (url.pathname === "/api/tts") {
@@ -211,7 +241,7 @@ createServer(async (req, res) => {
     }
     if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
-    if (url.pathname === "/api/practice/exit") { study.exitPractice(); return json(res, 200, { ok: true }); }
+    if (url.pathname === "/api/practice/exit") { study.exitPractice(); if (!authed) ent.free = false; return json(res, 200, { ok: true }); }
     if (url.pathname === "/api/notes") return json(res, 200, await study.notesView());
     if (url.pathname === "/api/stats") return json(res, 200, await study.statsView());
     if (url.pathname === "/api/hint") { const b = await body(req); return json(res, 200, { hint: study.hint(b.sentenceId) ?? null }); }
