@@ -17,15 +17,15 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const content = new SqliteContentRepository(process.env.PACK ?? root + "dist/pack-personal.sqlite");
 const store = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
 // 판정·정정·코멘트 설정(환경변수). JUDGE_CHAIN=앞에서부터 시도할 판정기(쉼표 구분). 기본은 무료 모델을 낮은 단계부터:
-//   groq-qwen → gemini(flash-lite 자동 선택) → groq-120b → groq-20b → claude(haiku, 구독 한도, 마지막 비상용). 2026-11-20 8건 시험에서 20b 는 정답을 오답 처리하고 응답 해석도 1건 실패해 뒤로 뺐다.
-//   Groq 는 모델마다 무료 한도가 따로(각 하루 1,000회·분당 8,000토큰 실측)라 3개를 이으면 하루 약 3,000회다. 한도·오류가 난 단계는 60초 쉬고 다음으로 넘어간다.
+//   groq-qwen → gemini(flash-lite 자동 선택) → claude(haiku, 구독 한도, 마지막 비상용). 같은 Groq 의 다른 모델(groq-120b, groq-20b)은 한도를 모델별로 따로 주는지 확인하지 못해 기본에서 뺐고, JUDGE_CHAIN 으로 넣을 수 있다(20b 는 8건 시험에서 정답을 오답 처리하고 응답 해석도 1건 실패).
+//   Groq 한도: 모델마다 헤더에 하루 1,000회·분당 8,000토큰이 표시되지만, 한 모델이 소진되면 다른 모델도 막히는지는 확인하지 못했다. 한도·오류가 난 단계는 60초 쉬고 다음으로 넘어간다.
 //   키: GROQ_API_KEY, GOOGLE_AI_STUDIO_API_KEY(없는 단계는 건너뜀). 모델 변경: GROQ_MODEL_20B/GROQ_MODEL_QWEN/GROQ_MODEL_120B, GOOGLE_AI_MODEL, JUDGE_MODEL(claude)
 //   JUDGE=off 면 LLM 판정 없음. 그 밖의 OpenAI 호환: JUDGE_CHAIN 에 openai 추가 + JUDGE_BASE_URL, JUDGE_API_KEY, JUDGE_API_MODEL
 function buildJudge(): LlmJudge | undefined {
   if (process.env.JUDGE === "off") return undefined;
   const groq = (model: string, fast: boolean) => new OpenAiCompatJudge({ baseUrl: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY, model, timeoutMs: 8000, fast });
   const list: LlmJudge[] = [];
-  for (const name of (process.env.JUDGE_CHAIN ?? "groq-qwen,gemini,groq-120b,groq-20b,claude").split(",").map((x) => x.trim()).filter(Boolean)) {
+  for (const name of (process.env.JUDGE_CHAIN ?? "groq-qwen,gemini,claude").split(",").map((x) => x.trim()).filter(Boolean)) {
     if (name.startsWith("groq") && !process.env.GROQ_API_KEY) continue;
     if (name === "groq-20b") list.push(groq(process.env.GROQ_MODEL_20B ?? "openai/gpt-oss-20b", true));
     else if (name === "groq-qwen") list.push(groq(process.env.GROQ_MODEL_QWEN ?? "qwen/qwen3.8-27b", false));

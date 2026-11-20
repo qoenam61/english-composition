@@ -97,7 +97,7 @@ export class GeminiJudge implements LlmJudge {
         try {
           const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(this.o.apiKey)}`, { signal: AbortSignal.timeout(8000) });
           const names = ((await r.json()) as { models?: Array<{ name: string; supportedGenerationMethods?: string[] }> }).models
-            ?.filter((m) => m.supportedGenerationMethods?.includes("generateContent") && /flash-lite/.test(m.name) && !/preview|exp|latest/.test(m.name)).map((m) => m.name.replace("models/", "")) ?? [];
+            ?.filter((m) => m.supportedGenerationMethods?.includes("generateContent") && /flash-lite/.test(m.name) && !/preview|exp|latest|tts|image|omni|audio|live|embed/.test(m.name)).map((m) => m.name.replace("models/", "")) ?? [];
           const ver = (n: string) => Number(/gemini-(\d+(?:\.\d+)?)/.exec(n)?.[1] ?? 0);
           model = names.sort((a, b) => ver(b) - ver(a))[0];
         } catch { /* 조회 실패면 아래 기본값 */ }

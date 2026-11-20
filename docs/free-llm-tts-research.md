@@ -3,9 +3,9 @@
 > 숫자는 제3자 블로그 기준이며 제공사가 예고 없이 바꾼다. 쓰기 전에 각 공식 문서에서 다시 확인할 것.
 
 ## 1. 채점·정정·코멘트(LLM 판정) — 현재 구성
-- **기본 순서(2026-11-20 개정): Groq qwen3.8-27b → Gemini flash-lite(자동 선택) → Groq gpt-oss-120b → Groq gpt-oss-20b → claude haiku(마지막 비상용)** (`JUDGE_CHAIN=groq-qwen,gemini,groq-120b,groq-20b,claude`). 키가 없는 단계는 건너뛰고, 한도·오류가 난 단계는 60초 쉬고 다음으로 넘어간다. 판정·정정·한 줄 코멘트는 같은 호출 하나에서 나온다.
-- Groq 한도는 모델별로 따로 계산된다(실측: 각 하루 1,000회, 분당 8,000토큰). 세 모델을 이으면 하루 약 3,000회. Gemini 키는 `.env`의 `GOOGLE_AI_STUDIO_API_KEY`.
-- 8건 시험(정답이 분명한 사례): qwen 7/8·평균 0.28초, gpt-oss-120b 7/8·0.55초, gpt-oss-20b 6/8·0.46초(정답을 오답 처리, 응답 해석 1건 실패). 표본이 작아 참고용.
+- **기본 순서(2026-11-20 사용자 지정): Groq qwen3.8-27b → Gemini flash-lite(자동 선택, 현재 gemini-3.5-flash-lite) → claude haiku(마지막 비상용)** (`JUDGE_CHAIN=groq-qwen,gemini,claude`). Groq의 다른 모델(`groq-120b`, `groq-20b`)은 한 모델이 소진되면 다른 모델도 막히는지 확인하지 못해 기본에서 뺐다. 키가 없는 단계는 건너뛰고, 한도·오류가 난 단계는 60초 쉬고 다음으로 넘어간다. 판정·정정·한 줄 코멘트는 같은 호출 하나에서 나온다.
+- Groq 한도: 모델별 헤더에 각 하루 1,000회·분당 8,000토큰이 표시된다(모델 간 독립 여부는 미확인). Gemini 키는 `.env`의 `GOOGLE_AI_STUDIO_API_KEY`.
+- 8건 시험(정답이 분명한 사례): qwen 7/8·평균 0.28초, gpt-oss-120b 7/8·0.55초, gpt-oss-20b 6/8·0.46초(정답을 오답 처리, 응답 해석 1건 실패). gemini-3.5-flash-lite 6/8·0.81초(뜻이 다른 답 tea를 정답 처리, 대체 표현을 패턴 미카운트로 구분 못함). 표본이 작아 참고용.
 - claude 모델은 haiku(`JUDGE_MODEL`로 변경). 구독 한도를 쓰되 호출당 토큰이 작다.
 - 무료 외부 LLM을 앞에 붙이는 설정(OpenAI 호환 API라면 어디든 가능):
   ```
