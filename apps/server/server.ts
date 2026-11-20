@@ -91,7 +91,15 @@ createServer(async (req, res) => {
     if (url.pathname === "/api/tts") {
       const text = (url.searchParams.get("text") ?? "").trim();
       if (!(await ttsServerUp()) || !text || text.length > 300) return json(res, 400, { error: "음성 서버를 쓸 수 없어요" });
-      const audio = await ttsAudio(text, url.searchParams.get("role") === "a" ? "a" : "q"); res.writeHead(200, { "content-type": "audio/wav", "cache-control": "public, max-age=86400" }); return res.end(audio);
+      const audio = await ttsAudio(text, url.searchParams.get("role") === "a" ? "a" : "q"); // iOS Safari 는 오디오를 Range(부분) 요청으로 받으므로 206 응답·길이·Accept-Ranges 가 있어야 재생된다.
+      const base = { "content-type": "audio/wav", "cache-control": "public, max-age=86400", "accept-ranges": "bytes" };
+      const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
+      if (m && (m[1] !== "" || m[2] !== "")) {
+        const total = audio.length; let start = m[1] === "" ? Math.max(total - Number(m[2]), 0) : Number(m[1]); let end = m[1] === "" || m[2] === "" ? total - 1 : Math.min(Number(m[2]), total - 1);
+        if (start > end || start >= total) { res.writeHead(416, { "content-range": `bytes */${total}` }); return res.end(); }
+        res.writeHead(206, { ...base, "content-range": `bytes ${start}-${end}/${total}`, "content-length": end - start + 1 }); return res.end(audio.subarray(start, end + 1));
+      }
+      res.writeHead(200, { ...base, "content-length": audio.length }); return res.end(audio);
     }
     if (url.pathname === "/api/overview") return json(res, 200, await study.overview());
     if (url.pathname === "/api/uncomplete") { const b = await body(req); return json(res, 200, await study.uncomplete(Number(b.patternId))); }
