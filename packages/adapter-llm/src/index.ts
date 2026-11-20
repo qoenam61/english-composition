@@ -71,12 +71,44 @@ export class OpenAiCompatJudge implements LlmJudge {
   }
 }
 
-/** 앞에서부터 시도해 처음 성공한 판정을 쓴다(예: 무료 외부 LLM → 실패/한도 시 claude haiku). */
+/** 앞에서부터 시도해 처음 성공한 판정을 쓴다. 실패한 단계(한도·오류)는 잠시 건너뛰어 같은 실패를 반복해 기다리지 않는다. */
 export class ChainJudge implements LlmJudge {
-  constructor(private judges: LlmJudge[]) {}
+  private downUntil = new Map<LlmJudge, number>();
+  constructor(private judges: LlmJudge[], private coolMs = 60_000, private now: () => number = Date.now) {}
   async judge(input: string, answers: string[], context?: string, info?: JudgeInfo): Promise<JudgeOutcome> {
     let last: unknown = new Error("판정기가 없다");
-    for (const j of this.judges) { try { const r = await j.judge(input, answers, context, info); return typeof r === "string" ? { verdict: r } : r; } catch (e) { last = e; } }
+    const live = this.judges.filter((j) => (this.downUntil.get(j) ?? 0) <= this.now());
+    for (const j of live.length > 0 ? live : this.judges) { // 전부 쉬는 중이면 처음부터 다시 시도
+      try { const r = await j.judge(input, answers, context, info); return typeof r === "string" ? { verdict: r } : r; }
+      catch (e) { last = e; this.downUntil.set(j, this.now() + this.coolMs); }
+    }
     throw last instanceof Error ? last : new Error(String(last));
+  }
+}
+
+/** Google AI Studio(Gemini). 모델을 지정하지 않으면 키로 조회해 가장 낮은 단계(flash-lite)의 최신 모델을 고른다. OpenAI 호환 엔드포인트를 쓴다. */
+export class GeminiJudge implements LlmJudge {
+  private inner?: Promise<OpenAiCompatJudge>;
+  constructor(private o: { apiKey: string; model?: string; timeoutMs?: number }) {}
+  private resolve(): Promise<OpenAiCompatJudge> {
+    this.inner ??= (async () => {
+      let model = this.o.model;
+      if (!model) {
+        try {
+          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(this.o.apiKey)}`, { signal: AbortSignal.timeout(8000) });
+          const names = ((await r.json()) as { models?: Array<{ name: string; supportedGenerationMethods?: string[] }> }).models
+            ?.filter((m) => m.supportedGenerationMethods?.includes("generateContent") && /flash-lite/.test(m.name) && !/preview|exp|latest/.test(m.name)).map((m) => m.name.replace("models/", "")) ?? [];
+          const ver = (n: string) => Number(/gemini-(\d+(?:\.\d+)?)/.exec(n)?.[1] ?? 0);
+          model = names.sort((a, b) => ver(b) - ver(a))[0];
+        } catch { /* 조회 실패면 아래 기본값 */ }
+      }
+      return new OpenAiCompatJudge({ baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", apiKey: this.o.apiKey, model: model ?? "gemini-2.5-flash-lite", timeoutMs: this.o.timeoutMs ?? 8000 });
+    })();
+    this.inner.catch(() => { this.inner = undefined; });
+    return this.inner;
+  }
+  async judge(input: string, answers: string[], context?: string, info?: JudgeInfo): Promise<JudgeOutcome> {
+    const r = await (await this.resolve()).judge(input, answers, context, info);
+    return typeof r === "string" ? { verdict: r } : r;
   }
 }

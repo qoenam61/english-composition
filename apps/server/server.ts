@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { SqliteContentRepository } from "@app/adapter-content";
 import { SqliteUserStore } from "@app/adapter-userdb";
 import { GradingService } from "@app/grading";
-import { ChainJudge, ClaudeCliJudge, OpenAiCompatJudge } from "@app/adapter-llm";
+import { ChainJudge, ClaudeCliJudge, GeminiJudge, OpenAiCompatJudge } from "@app/adapter-llm";
 import type { LlmJudge } from "@app/contracts";
 import { StudyService } from "@app/app";
 
@@ -16,14 +16,21 @@ import { StudyService } from "@app/app";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const content = new SqliteContentRepository(process.env.PACK ?? root + "dist/pack-personal.sqlite");
 const store = new SqliteUserStore(process.env.USER_DB ?? root + "data/user.sqlite");
-// 판정·정정·코멘트 설정(환경변수). JUDGE_CHAIN=앞에서부터 시도할 판정기, 기본 "groq,claude" = 1순위 Groq(무료), 2순위 claude haiku.
-//   groq: GROQ_API_KEY(없으면 건너뜀), GROQ_MODEL(기본 openai/gpt-oss-120b) / claude: JUDGE_MODEL(기본 haiku)
-//   openai(그 밖의 OpenAI 호환): JUDGE_BASE_URL, JUDGE_API_KEY, JUDGE_API_MODEL / JUDGE=off 면 LLM 판정 없음
+// 판정·정정·코멘트 설정(환경변수). JUDGE_CHAIN=앞에서부터 시도할 판정기(쉼표 구분). 기본은 무료 모델을 낮은 단계부터:
+//   groq-qwen → gemini(flash-lite 자동 선택) → groq-120b → groq-20b → claude(haiku, 구독 한도, 마지막 비상용). 2026-11-20 8건 시험에서 20b 는 정답을 오답 처리하고 응답 해석도 1건 실패해 뒤로 뺐다.
+//   Groq 는 모델마다 무료 한도가 따로(각 하루 1,000회·분당 8,000토큰 실측)라 3개를 이으면 하루 약 3,000회다. 한도·오류가 난 단계는 60초 쉬고 다음으로 넘어간다.
+//   키: GROQ_API_KEY, GOOGLE_AI_STUDIO_API_KEY(없는 단계는 건너뜀). 모델 변경: GROQ_MODEL_20B/GROQ_MODEL_QWEN/GROQ_MODEL_120B, GOOGLE_AI_MODEL, JUDGE_MODEL(claude)
+//   JUDGE=off 면 LLM 판정 없음. 그 밖의 OpenAI 호환: JUDGE_CHAIN 에 openai 추가 + JUDGE_BASE_URL, JUDGE_API_KEY, JUDGE_API_MODEL
 function buildJudge(): LlmJudge | undefined {
   if (process.env.JUDGE === "off") return undefined;
+  const groq = (model: string, fast: boolean) => new OpenAiCompatJudge({ baseUrl: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY, model, timeoutMs: 8000, fast });
   const list: LlmJudge[] = [];
-  for (const name of (process.env.JUDGE_CHAIN ?? "groq,claude").split(",").map((x) => x.trim()).filter(Boolean)) {
-    if (name === "groq" && process.env.GROQ_API_KEY) list.push(new OpenAiCompatJudge({ baseUrl: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY, model: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b", timeoutMs: 8000, fast: true }));
+  for (const name of (process.env.JUDGE_CHAIN ?? "groq-qwen,gemini,groq-120b,groq-20b,claude").split(",").map((x) => x.trim()).filter(Boolean)) {
+    if (name.startsWith("groq") && !process.env.GROQ_API_KEY) continue;
+    if (name === "groq-20b") list.push(groq(process.env.GROQ_MODEL_20B ?? "openai/gpt-oss-20b", true));
+    else if (name === "groq-qwen") list.push(groq(process.env.GROQ_MODEL_QWEN ?? "qwen/qwen3.8-27b", false));
+    else if (name === "groq-120b" || name === "groq") list.push(groq(process.env.GROQ_MODEL_120B ?? process.env.GROQ_MODEL ?? "openai/gpt-oss-120b", true));
+    else if (name === "gemini" && process.env.GOOGLE_AI_STUDIO_API_KEY) list.push(new GeminiJudge({ apiKey: process.env.GOOGLE_AI_STUDIO_API_KEY, model: process.env.GOOGLE_AI_MODEL }));
     else if (name === "claude") list.push(new ClaudeCliJudge({ model: process.env.JUDGE_MODEL ?? "haiku" }));
     else if (name === "openai" && process.env.JUDGE_BASE_URL && process.env.JUDGE_API_MODEL) list.push(new OpenAiCompatJudge({ baseUrl: process.env.JUDGE_BASE_URL, apiKey: process.env.JUDGE_API_KEY, model: process.env.JUDGE_API_MODEL }));
   }
