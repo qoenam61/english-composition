@@ -147,7 +147,20 @@ createServer(async (req, res) => {
     const who = userIdFor(req.headers, req.socket.remoteAddress, owners);
     const sess = verifySession(sessionSecret, parseCookies(req.headers.cookie).epa_s, Date.now());
     const userId = sess ? (ownerAccounts.has(sess.u) ? "me" : sess.u) : who.userId;
-    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: loginProviders.map((x) => ({ name: x.name, label: x.label })) });
+    // 관리자: 이 컴퓨터에서 직접 연 접속, 또는 OWNER_ACCOUNTS 에 적은 로그인 계정. (IP 는 공유될 수 있어 관리자 근거로 쓰지 않는다)
+    const isAdmin = (!sess && who.local) || (!!sess && ownerAccounts.has(sess.u));
+    if (url.pathname === "/api/admin/users") {
+      if (!isAdmin) return json(res, 403, { error: "forbidden" });
+      const label = (id: string) => (id === "me" ? "기존 기록(me)" : id.startsWith("u-") ? "소셜 로그인" : id.startsWith("g-") ? "게스트" : "IP 계정");
+      return json(res, 200, { users: store.adminSummary().map((u) => ({ ...u, kind: label(u.userId) })) });
+    }
+    if (url.pathname === "/api/admin/delete" && req.method === "POST") {
+      if (!isAdmin) return json(res, 403, { error: "forbidden" });
+      const id = String(new URL(req.url ?? "", "http://x").searchParams.get("id") ?? "");
+      if (!id || id === "me") return json(res, 400, { error: "cannot delete" });
+      store.deleteUser(id); users.delete(id); return json(res, 200, { ok: true });
+    }
+    if (url.pathname === "/api/whoami") return json(res, 200, { ip: who.ip, account: userId, owner: userId === "me", admin: isAdmin, loggedIn: !!sess, loginMethod: sess?.p ?? null, sessionAccount: sess?.u ?? null, providers: loginProviders.map((x) => ({ name: x.name, label: x.label })) });
     const ent = entryFor(userId); const study = ent.study;
     if (!ent.opened || url.pathname === "/api/open") { await study.open(url.searchParams.get("chapter") ? Number(url.searchParams.get("chapter")) : undefined); ent.opened = true; }
     if (url.pathname === "/api/open") return json(res, 200, { ok: true });

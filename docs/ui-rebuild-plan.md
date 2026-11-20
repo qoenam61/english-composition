@@ -30,3 +30,4 @@
   - `.env`: `PUBLIC_BASE_URL=https://composition.jwopsworkflowzone.cloud`, `OAUTH_<GOOGLE|KAKAO|NAVER|GITHUB|DISCORD|MICROSOFT|FACEBOOK>_CLIENT_ID` / `_CLIENT_SECRET`(카카오는 시크릿 선택), 기존 기록 연결은 `OWNER_ACCOUNTS=<로그인 후 /api/whoami 의 sessionAccount>`. 세션 비밀은 `data/session-secret`에 자동 생성(또는 `SESSION_SECRET`).
   - 콜백 주소: `https://composition.jwopsworkflowzone.cloud/auth/<제공사>/callback`
   - 검증 범위: 가짜 제공사로 단위 테스트(상태값·PKCE·쿠키 서명·계정 ID)와 임시 서버 동작 확인까지. 실제 제공사 키로 로그인해 본 것은 없다. 제공사별 주소·필드는 문서 기억 기준이라 첫 로그인 때 확인이 필요하다.
+- 2026-11-20: 관리자 권한. 관리자 = 이 컴퓨터에서 직접 연 접속, 또는 `OWNER_ACCOUNTS`에 적은 로그인 계정(IP는 공유될 수 있어 근거로 쓰지 않음). 계정 메뉴에 관리자 패널(계정별 시도·정답·완료·마지막 접속, 기록 삭제). 학습 입력 내용은 보여 주지 않는다. API: `/api/admin/users`, `/api/admin/delete?id=`(관리자 외 403).

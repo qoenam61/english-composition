@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { AdminPanel } from "./Admin";
 import { Btn, Card, Modal } from "./ui";
 
-interface Who { ip: string; account: string; owner: boolean; loggedIn: boolean; loginMethod: string | null; sessionAccount: string | null; providers: Array<{ name: string; label: string }> }
+interface Who { admin?: boolean; ip: string; account: string; owner: boolean; loggedIn: boolean; loginMethod: string | null; sessionAccount: string | null; providers: Array<{ name: string; label: string }> }
 const METHOD: Record<string, string> = { guest: "이 기기 전용 계정", google: "Google", kakao: "카카오", naver: "네이버", github: "GitHub", discord: "Discord", microsoft: "Microsoft", facebook: "Facebook" };
 
 /** 계정 메뉴: 소셜 로그인(키가 설정된 제공사만), 이 기기 전용 계정, 로그아웃. 로그인하지 않으면 접속 IP 기준 계정으로 쓴다. */
@@ -11,7 +12,7 @@ export function AccountButton() {
   useEffect(load, []);
   useEffect(() => { if (failed) { setOpen(true); history.replaceState(null, "", location.pathname + location.hash); } }, [failed]);
   const post = async (path: string) => { await fetch(path, { method: "POST" }); location.reload(); };
-  const label = !who ? "계정" : who.loggedIn ? (who.loginMethod === "guest" ? "게스트" : METHOD[who.loginMethod ?? ""] ?? "로그인됨") : who.owner ? "내 기록" : "로그인";
+  const label = !who ? "계정" : who.admin ? "관리자" : who.loggedIn ? (who.loginMethod === "guest" ? "게스트" : METHOD[who.loginMethod ?? ""] ?? "로그인됨") : who.admin ? "관리자" : who.owner ? "내 기록" : "로그인";
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="rounded-lg bg-surface text-t2 px-2.5 py-1 text-xs font-extrabold border-b-2 border-app whitespace-nowrap">👤 {label}</button>
@@ -24,6 +25,7 @@ export function AccountButton() {
           {who && !who.loggedIn && <Btn tone="sky" onClick={() => void post("/auth/guest")}>이 기기 전용 계정 만들기</Btn>}
           {who && !who.loggedIn && who.providers.length === 0 && <p className="text-xs text-t3">소셜 로그인은 아직 설정되지 않았어요.</p>}
           {who?.loggedIn && <Btn tone="red" onClick={() => void post("/auth/logout")}>로그아웃</Btn>}
+          {who?.admin && <AdminPanel />}
           {who?.loggedIn && who.sessionAccount && <p className="text-[11px] text-t3 break-all">계정 ID: {who.sessionAccount}</p>}
           <Btn tone="sky" onClick={() => setOpen(false)}>닫기</Btn>
         </Card>

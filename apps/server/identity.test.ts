@@ -17,3 +17,11 @@ describe("접속 IP 기준 계정", () => {
     expect(ipKey("2001:db8::1")).toBe("2001:db8:0:0::/64"); expect(ipKey("::ffff:1.2.3.4")).toBe("1.2.3.4");
   });
 });
+
+describe("관리자 판정 재료", () => {
+  it("이 컴퓨터 직접 접속만 local, 터널 경유·OWNER_IPS 는 local 아님", () => {
+    expect(userIdFor({}, "127.0.0.1", new Set()).local).toBe(true);
+    expect(userIdFor({ "cf-connecting-ip": "127.0.0.1" }, "127.0.0.1", new Set()).local).toBe(false);
+    expect(userIdFor({ "cf-connecting-ip": "1.2.3.4" }, "x", parseOwners("1.2.3.4")).local).toBe(false);
+  });
+});

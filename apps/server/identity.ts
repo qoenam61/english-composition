@@ -23,12 +23,12 @@ export function ipKey(ip: string): string {
 const isLoopback = (ip: string) => ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
 
 /** 사용자 아이디. 이 컴퓨터에서 직접 연 접속과 OWNER_IPS 에 적은 IP 는 기존 기록("me")을, 나머지는 IP 해시로 만든 별도 계정을 쓴다. 원본 IP 는 저장하지 않는다. */
-export function userIdFor(h: Headers, remote: string | undefined, owners: ReadonlySet<string>): { userId: string; ip: string } {
+export function userIdFor(h: Headers, remote: string | undefined, owners: ReadonlySet<string>): { userId: string; ip: string; local: boolean } {
   const { ip, viaProxy } = clientIp(h, remote);
-  if (!viaProxy && isLoopback(ip)) return { userId: "me", ip };
+  if (!viaProxy && isLoopback(ip)) return { userId: "me", ip, local: true };
   const key = ipKey(ip);
-  if (owners.has(key)) return { userId: "me", ip };
-  return { userId: "ip-" + createHash("sha256").update("epa:" + key).digest("hex").slice(0, 12), ip };
+  if (owners.has(key)) return { userId: "me", ip, local: false };
+  return { userId: "ip-" + createHash("sha256").update("epa:" + key).digest("hex").slice(0, 12), ip, local: false };
 }
 
 export const parseOwners = (s: string | undefined): Set<string> => new Set((s ?? "").split(",").map((x) => x.trim()).filter(Boolean).map(ipKey));
