@@ -75,9 +75,14 @@ def shared_places(src):
         if pid in live and cid in cards:
             pl = place_of(*cards[cid])
             if pl: votes.setdefault(pid, {}).setdefault(pl, 0); votes[pid][pl] += 1
+    try:  # 신규 생성 문장(own)을 내용 기준으로 분류한 장소가 있으면 카드 다수결보다 우선한다(e10_gen_own.py classify)
+        own = {pid: pl for pid, pl in src.execute("SELECT pattern_id, place FROM own_gen WHERE status='ok' AND place IS NOT NULL") if pid in live and pl in order}
+    except Exception:  # noqa: BLE001 — own_gen 이 없는 DB
+        own = {}
     out = {}
-    for pid, v in votes.items():
-        pl = min(v, key=lambda k: (-v[k], order[k]))
+    for pid in set(votes) | set(own):
+        v = votes.get(pid, {})
+        pl = own.get(pid) or min(v, key=lambda k: (-v[k], order[k]))
         out.setdefault(pl, []).append((pid, live[pid][0], live[pid][1]))
     return out
 
