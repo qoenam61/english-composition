@@ -86,7 +86,7 @@ def inputs(con, ids):
     return out
 
 
-def call(prompt, model):
+def call(prompt, model, raw_list=False):
     err = ""
     for _ in range(2):
         p = subprocess.run(["claude", "-p", "--model", model, "--no-session-persistence", "--disable-slash-commands", "--tools", "", "--setting-sources", "",
@@ -94,6 +94,7 @@ def call(prompt, model):
         try:
             meta = json.loads(p.stdout)
             arr = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", meta["result"].strip()))
+            if raw_list: return arr, meta.get("total_cost_usd", 0.0)  # id 없는 목록(새 패턴 생성용)
             return {int(o["id"]): o for o in arr}, meta.get("total_cost_usd", 0.0)
         except Exception as e:  # noqa: BLE001
             err = f"{type(e).__name__}: {e}"

@@ -22,6 +22,7 @@ PLACE_OF = {
     "society-news": "presentation", "nature-science": "presentation", "abstract-ideas": "presentation",
 }
 # 키워드로 세부 장소를 덮어쓴다(면접·발표 전용 문장이 원본에는 적어서 낱말·예문에 단서가 있는 것만 옮긴다).
+import json
 import re as _re
 _INTERVIEW = _re.compile(r"\b(interview\w*|resum[eé]s?|applicants?|candidates?|recruit\w*|hir(?:e|ed|ing)|salary|job offer|job application|cover letter|promotion)\b", _re.I)
 _PRESENT = _re.compile(r"\b(presentations?|presenter|slides?|audience|speeches|speech|debate\w*|lecture|keynote|panel|persuade|argument)\b", _re.I)
@@ -100,7 +101,7 @@ def append(src, out):
         pl = place_of(cat, pat, ex)
         if pl: by_place.setdefault(pl, []).append((cid, lv, pat, kor, ex))
     shared = shared_places(src)
-    n_pat = n_ch = n_shared = 0; next_id = ID0; next_ch = CH0; per_place = {}
+    n_pat = n_ch = n_shared = n_fresh = 0; next_id = ID0; next_ch = CH0; per_place = {}
     for pos, (slug, ko) in enumerate(TOPICS, start=1):
         rows = by_place.get(slug, []); sh = shared.get(slug, [])
         if not rows and not sh: continue
@@ -111,6 +112,16 @@ def append(src, out):
             out.execute("INSERT INTO sentence VALUES (?,?,?,?,?,NULL,NULL,?,?)", (next_id, next_id, "original", ex, kor, lv, cid))
             out.execute("INSERT INTO sentence_answer VALUES (?,?,?,?)", (next_id, ex, "canonical", 1))
             items.append((next_id, lv, pat)); next_id += 1; n_pat += 1
+        try:  # 부족한 장소에 새로 만든 패턴+신규 문장(e11_gen_places.py). 패턴 로드맵에는 넣지 않고 이 장소 로드맵에만 둔다
+            fresh = src.execute("SELECT new_id, level, pattern, en, ko, context, hint, variants FROM own_new WHERE status='ok' AND place=? ORDER BY new_id", (slug,)).fetchall()
+        except Exception:  # noqa: BLE001 — own_new 가 없는 DB
+            fresh = []
+        for nid, lv, pat, en, ko, ctx, hint, variants in fresh:
+            out.execute("INSERT INTO pattern VALUES (?,?,?)", (nid, pat, lv))
+            out.execute("INSERT INTO sentence VALUES (?,?,?,?,?,?,?,?,?)", (nid, nid, "own", en, ko, ctx, hint, lv, "gen-own-new-v1"))
+            out.execute("INSERT INTO sentence_answer VALUES (?,?,?,?)", (nid, en, "canonical", 1))
+            for v in json.loads(variants or "[]"): out.execute("INSERT INTO sentence_answer VALUES (?,?,?,?)", (nid, v, "variant_ai", 2))
+            items.append((nid, lv, pat)); n_fresh += 1
         items += [(pid, lv, sk) for pid, lv, sk in sh]; n_shared += len(sh)
         items.sort(key=lambda r: (ORD[r[1]], r[2].lower(), r[0]))
         chs = plan_chapters(items)
@@ -119,4 +130,4 @@ def append(src, out):
             out.executemany("INSERT INTO chapter_pattern VALUES (?,?,?)", [(next_ch, p + 1, pid) for p, pid in enumerate(grp)])
             next_ch += 1; n_ch += 1
         per_place[slug] = (len(rows) + len(sh), len(chs))
-    return {"cards": n_pat, "duplicates_merged": n_dup, "shared_patterns": n_shared, "chapters": n_ch, "per_place(cards,chapters)": per_place}
+    return {"cards": n_pat, "duplicates_merged": n_dup, "shared_patterns": n_shared, "new_own_patterns": n_fresh, "chapters": n_ch, "per_place(cards,chapters)": per_place}
