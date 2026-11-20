@@ -9,11 +9,13 @@ export interface Provider {
   secretOptional?: boolean;  // 클라이언트 시크릿이 선택인 제공사(카카오: 콘솔 설정에 따라)
   tokenNeedsState?: boolean; // 토큰 요청에 state 를 함께 보내야 하는 제공사(네이버)
   userinfoHeaders?: Record<string, string>;
+  emailPath?: string;        // 관리자 화면에 보일 이메일 필드(제공사가 "검증됨"이라고 한 경우만 사용)
+  verifiedPath?: string;
 }
 
 // 2026-11-20 작성: 각 값은 제공사 공식 문서 기준으로 기억에서 옮긴 것이며 실제 키로 확인한 제공사는 아직 없다.
 export const PROVIDERS: readonly Provider[] = [
-  { name: "google", label: "Google", authorize: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://oauth2.googleapis.com/token", userinfo: "https://openidconnect.googleapis.com/v1/userinfo", scope: "openid", idPath: "sub", pkce: true },
+  { name: "google", label: "Google", authorize: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://oauth2.googleapis.com/token", userinfo: "https://openidconnect.googleapis.com/v1/userinfo", scope: "openid email", idPath: "sub", pkce: true, emailPath: "email", verifiedPath: "email_verified" },
   { name: "kakao", label: "카카오", authorize: "https://kauth.kakao.com/oauth/authorize", token: "https://kauth.kakao.com/oauth/token", userinfo: "https://kapi.kakao.com/v2/user/me", idPath: "id", secretOptional: true },
   { name: "naver", label: "네이버", authorize: "https://nid.naver.com/oauth2.0/authorize", token: "https://nid.naver.com/oauth2.0/token", userinfo: "https://openapi.naver.com/v1/nid/me", idPath: "response.id", tokenNeedsState: true },
   { name: "github", label: "GitHub", authorize: "https://github.com/login/oauth/authorize", token: "https://github.com/login/oauth/access_token", userinfo: "https://api.github.com/user", idPath: "id", userinfoHeaders: { "user-agent": "english-pattern-app", accept: "application/vnd.github+json" } },
@@ -74,7 +76,7 @@ export function authorizeUrl(p: Provider, env: Env, state: string, challenge: st
 const dig = (o: unknown, path: string): unknown => path.split(".").reduce<unknown>((x, k) => (x && typeof x === "object" ? (x as Record<string, unknown>)[k] : undefined), o);
 
 /** 인증 코드를 토큰으로 바꿔 사용자 고유 ID만 읽는다. 실패 사유는 밖으로 내보내지 않는다(제공사 응답을 되돌려주지 않기 위해). */
-export async function identify(p: Provider, env: Env, code: string, state: string, verifier: string, fetchFn: typeof fetch = fetch): Promise<string> {
+export async function identify(p: Provider, env: Env, code: string, state: string, verifier: string, fetchFn: typeof fetch = fetch): Promise<{ id: string; email?: string }> {
   const form = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri(env, p), client_id: env[envName(p, "CLIENT_ID")] ?? "" });
   const secret = env[envName(p, "CLIENT_SECRET")]; if (secret) form.set("client_secret", secret);
   if (p.pkce) form.set("code_verifier", verifier);
@@ -85,7 +87,8 @@ export async function identify(p: Provider, env: Env, code: string, state: strin
   if (typeof access !== "string" || !access) throw new Error("token");
   const u = await fetchFn(p.userinfo, { headers: { authorization: `Bearer ${access}`, accept: "application/json", ...p.userinfoHeaders }, signal: AbortSignal.timeout(10_000) });
   if (!u.ok) throw new Error("userinfo");
-  const id = dig(await u.json(), p.idPath);
+  const ujson: unknown = await u.json(); const id = dig(ujson, p.idPath);
   if ((typeof id !== "string" && typeof id !== "number") || String(id) === "") throw new Error("userinfo");
-  return String(id);
+  const verified = p.verifiedPath ? dig(ujson, p.verifiedPath) : undefined; const mail = p.emailPath ? dig(ujson, p.emailPath) : undefined;
+  return { id: String(id), email: typeof mail === "string" && mail.length <= 254 && (verified === true || verified === "true") ? mail.toLowerCase() : undefined };
 }

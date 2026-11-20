@@ -101,11 +101,11 @@ const sessionSecret = loadSessionSecret();
 // 로그인한 계정 목록과 관리자 지정(data/accounts.json, data/admins.json). 소셜 제공사의 이름·이메일은 저장하지 않는다.
 const accFile = root + "data/accounts.json", admFile = root + "data/admins.json";
 const readJson = <T,>(f: string, d: T): T => { try { return JSON.parse(readFileSync(f, "utf8")) as T; } catch { return d; } };
-const accounts: Record<string, { provider: string; firstAt: number; lastAt: number }> = readJson(accFile, {});
+const accounts: Record<string, { provider: string; firstAt: number; lastAt: number; email?: string }> = readJson(accFile, {});
 const savedAdmins = new Set<string>(readJson<string[]>(admFile, []));
 const isAdminAccount = (id: string) => ownerAccounts.has(id) || savedAdmins.has(id);
 const saveJson = (f: string, v: unknown) => { mkdirSync(root + "data", { recursive: true }); writeFileSync(f, JSON.stringify(v), { mode: 0o600 }); };
-const noteLogin = (id: string, provider: string) => { const t = Date.now(); accounts[id] = { provider, firstAt: accounts[id]?.firstAt ?? t, lastAt: t }; saveJson(accFile, accounts); };
+const noteLogin = (id: string, provider: string, email?: string) => { const t = Date.now(); accounts[id] = { provider, firstAt: accounts[id]?.firstAt ?? t, lastAt: t, email: email ?? accounts[id]?.email }; saveJson(accFile, accounts); };
 const SESSION_DAYS = 30;
 // 로그인하지 않은 방문자는 자유훈련만 쓸 수 있다(기록 없음). 나머지 기능은 로그인 후.
 const redirect = (res: any, to: string, cookies: string[] = []) => { res.writeHead(302, { location: to, "set-cookie": cookies, "cache-control": "no-store" }); res.end(); };
@@ -127,8 +127,8 @@ async function handleAuth(req: any, res: any, url: URL): Promise<void> {
     const code = url.searchParams.get("code");
     if (url.searchParams.get("error") || !code || !sameState(c.epa_st, url.searchParams.get("state"))) return redirect(res, "/?login=failed", wipe);
     try {
-      const sub = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
-      const acc = accountId(p.name, sub); noteLogin(acc, p.name);
+      const got = await identify(p, process.env, code, c.epa_st!, c.epa_cv ?? "");
+      const acc = accountId(p.name, got.id); noteLogin(acc, p.name, got.email);
       return redirect(res, "/", [...wipe, startSession(acc, p.name)]);
     } catch (e) { console.error("로그인 실패:", p.name, e instanceof Error ? e.message : "unknown"); return redirect(res, "/?login=failed", wipe); }
   }
@@ -195,7 +195,7 @@ createServer(async (req, res) => {
       for (const id of files) { const e = users.get(id); const st = e?.store ?? new SqliteUserStore(userFile(id)); const r = st.adminSummary()[0]; if (r) sum.set(id, { ...r, userId: id }); if (!e) st.close(); }
       const ids = new Set([...sum.keys(), ...Object.keys(accounts), ...files]);
       const list = [...ids].map((id) => { const u = sum.get(id); const a = accounts[id];
-        return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), firstAt: a?.firstAt ?? 0, admin: isAdminAccount(id), fixedAdmin: !!process.env.OWNER_ACCOUNTS?.split(",").map((x) => x.trim()).includes(id), linkedMe: ownerAccounts.has(id) }; });
+        return { userId: id, kind: label(id) + (a ? ` · ${a.provider}` : ""), attempts: u?.attempts ?? 0, passed: u?.passed ?? 0, completed: u?.completed ?? 0, lastAt: Math.max(u?.lastAt ?? 0, a?.lastAt ?? 0), firstAt: a?.firstAt ?? 0, email: a?.email, admin: isAdminAccount(id), fixedAdmin: !!process.env.OWNER_ACCOUNTS?.split(",").map((x) => x.trim()).includes(id), linkedMe: ownerAccounts.has(id) }; });
       return json(res, 200, { users: list.sort((x, y) => y.lastAt - x.lastAt) });
     }
     if (url.pathname === "/api/admin/promote" && req.method === "POST") {
