@@ -45,10 +45,6 @@ export function Roadmap({ onStudy }: { onStudy: () => void }) {
         </div>
         <div className="overflow-hidden rounded-2xl border-2 border-cardb" style={{ background: SEA.b }}>
           <IslandMap data={all.roadmaps} selected={sel} onSelect={pick} />
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t-2 border-cardb bg-card px-3 py-2.5 text-xs text-t3">
-            <span><b className="text-green">★1 입문</b> · <b className="text-orange">★2 중급</b> · <b className="text-purple">★3 고급</b></span>
-            <span>섬을 두른 고리 = 단계별 진행도 · 속 빈 별 = 탐험 전</span>
-          </div>
         </div>
       </section>
       <section className={`${screen === "map" ? "hidden md:block" : ""} mt-0 md:mt-0`} aria-label="챕터 길">

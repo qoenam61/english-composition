@@ -25,6 +25,16 @@ export function Star({ cx, cy, R, tier, filled, num }: { cx: number; cy: number;
     </g>
   );
 }
+/** 섬 우측 상단 단계 뱃지(입문·중급·고급·완주). 단계마다 색이 다르고 글자가 있어 색을 구분하지 못해도 읽힌다. */
+export function Badge({ cx, cy, text, tier }: { cx: number; cy: number; text: string; tier: number }) {
+  const w = text.length * 11 + 12, c = TIER_COLOR[Math.min(2, tier)]!;
+  return (
+    <g pointerEvents="none">
+      <rect x={cx - w / 2} y={cy - 9} width={w} height={17} rx={8.5} fill={c} stroke="#12272f" strokeWidth={2} />
+      <text x={cx} y={cy + 3.4} textAnchor="middle" fontSize={10} fontWeight={800} fill="#131F24">{text}</text>
+    </g>
+  );
+}
 export function Chip({ cx, cy, text, color, filled }: { cx: number; cy: number; text: string; color: string; filled: boolean }) {
   const w = text.length * 7 + 18;
   return (
