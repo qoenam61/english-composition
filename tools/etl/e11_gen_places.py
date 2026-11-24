@@ -22,7 +22,12 @@ PLAN = {  # 장소: (레벨당 개수, 하위 주제)
                       "phone or video interview", "internship and new graduate job hunting"]),
     "presentation": (3, ["opening and greeting the audience", "introducing the structure and agenda", "presenting data, charts and results", "making and defending an argument",
                          "transitions between points", "handling audience questions", "disagreeing politely and debating", "summarizing and closing",
-                         "talking about slides and visuals", "speaking up in meetings and discussions", "persuading and recommending", "answering criticism and rebuttals"]),
+                         "talking about slides and visuals", "speaking up in meetings and discussions", "persuading and recommending", "answering criticism and rebuttals",
+                         # 2026-11-24 추가: 시사 소재 대신 발표 진행 표현을 채운다
+                         "starting with a hook, a story or a question", "explaining a process step by step", "comparing options and weighing pros and cons",
+                         "describing trends, increases and decreases", "emphasizing key points", "giving examples and evidence", "referring back to earlier points",
+                         "handling technical problems and time limits", "inviting questions and feedback", "thanking the audience and ending",
+                         "online and virtual presentations", "pitching a product or an idea", "reporting progress and results at a meeting"]),
     "school": (3, ["class participation", "asking a teacher or professor for help", "assignments and deadlines", "exams and grades", "group projects",
                    "campus life and clubs", "choosing courses and majors", "study habits and plans", "library and study spaces", "school events and activities", "talking with classmates"]),
 }

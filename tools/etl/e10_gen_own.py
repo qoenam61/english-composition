@@ -154,7 +154,7 @@ def cmd_gen(a):
                 v, why = gate(it, res[it["id"]]) if it["id"] in res else (None, "응답 없음")
                 tries = (con.execute("SELECT tries FROM own_gen WHERE pattern_id=?", (it["id"],)).fetchone() or (0,))[0] + 1  # 락 안
                 if v:
-                    con.execute("INSERT OR REPLACE INTO own_gen VALUES (?,?,?,?,?,?,?,?,?,?,?)", (it["id"], "gen", v["en"], v["ko"], v["context"], v["hint"], json.dumps(v["variants"], ensure_ascii=False), None, tries, a.model, cost / len(items)))
+                    con.execute("INSERT OR REPLACE INTO own_gen(pattern_id,status,en,ko,context,hint,variants,why,tries,model,cost_usd) VALUES (?,?,?,?,?,?,?,?,?,?,?)", (it["id"], "gen", v["en"], v["ko"], v["context"], v["hint"], json.dumps(v["variants"], ensure_ascii=False), None, tries, a.model, cost / len(items)))
                     tot["ok"] += 1
                 else:
                     con.execute("INSERT OR REPLACE INTO own_gen(pattern_id,status,why,tries,model) VALUES (?,?,?,?,?)", (it["id"], "bad", why, tries, a.model)); tot["bad"] += 1
@@ -205,7 +205,7 @@ TOPIC_PROMPT = """Classify each English-practice sentence into exactly ONE place
 Categories (use the slug):
 - daily-talk: everyday life, small talk, family/friends, feelings, opinions, general chat (default when nothing else fits)
 - workplace: office work, colleagues, meetings, emails, deadlines, business operations
-- presentation: presentations, speeches, debates, explaining data or arguments to an audience, formal discussion of society/science topics
+- presentation: ONLY language a speaker uses while giving a talk, presentation, speech or formal discussion (greeting the audience, outlining the agenda, presenting data/charts, transitions, giving examples, summarizing, taking audience questions, polite disagreement). A sentence that merely talks ABOUT a news/society/science topic (politics, crime, accidents, weather, health news) is NOT presentation — use daily-talk
 - interview: job interviews, resumes, applying for jobs, career/hiring/salary talk
 - school: classes, studying, exams, campus, teachers, homework
 - hospital: health, doctor/pharmacy visits, symptoms, body, medicine
@@ -228,7 +228,10 @@ def cmd_classify(a):
     spec = __import__("importlib.util").util.spec_from_file_location("e9", ROOT / "tools" / "etl" / "e9_lexical_chapters.py")
     e9 = __import__("importlib.util").util.module_from_spec(spec); spec.loader.exec_module(e9)
     slugs = {t[0] for t in e9.TOPICS}
-    rows = con.execute("SELECT pattern_id, en, ko FROM own_gen WHERE status='ok' AND place IS NULL ORDER BY pattern_id").fetchall()
+    if a.reclass:  # 특정 장소로 분류된 것만 새 기준으로 다시 분류
+        rows = con.execute("SELECT pattern_id, en, ko FROM own_gen WHERE status='ok' AND place=? ORDER BY pattern_id", (a.reclass,)).fetchall()
+    else:
+        rows = con.execute("SELECT pattern_id, en, ko FROM own_gen WHERE status='ok' AND place IS NULL ORDER BY pattern_id").fetchall()
     batches = [rows[i:i + a.batch] for i in range(0, len(rows), a.batch)]
     print(f"분류 대상 {len(rows)} / 배치 {len(batches)}")
     lock = threading.Lock(); fails = []
@@ -259,12 +262,22 @@ def cmd_report(_a):
 
 def cmd_apply(a):
     con = connect()
-    if con.execute("SELECT COUNT(*) FROM sentence WHERE sentence_id>=?", (ID0,)).fetchone()[0] and not a.redo:
-        sys.exit("이미 own 문장이 있습니다. 다시 반영하려면 --redo")
-    con.execute("DELETE FROM sentence_answer WHERE sentence_id>=?", (ID0,)); con.execute("DELETE FROM sentence WHERE sentence_id>=?", (ID0,))
-    assert con.execute("SELECT MAX(sentence_id) FROM sentence").fetchone()[0] < ID0, "ID 대역 충돌"
-    seen, n = set(), 0
-    for pid, en, ko, ctx, hint, variants, model in con.execute("SELECT pattern_id,en,ko,context,hint,variants,model FROM own_gen WHERE status='ok' ORDER BY pattern_id").fetchall():
+    if a.append:  # 기존 문장 ID를 보존하고(사용자 기록이 ID를 가리킨다) 아직 own 문장이 없는 패턴만 뒤에 붙인다
+        LIM = 300000  # e11 대역(300000+)과 겹치지 않게 own_gen 대역은 200000~299999
+        have = {r[0]: r[1] for r in con.execute("SELECT pattern_id, en FROM sentence WHERE sentence_id>=? AND sentence_id<?", (ID0, LIM))}
+        seen = {norm(e) for e in have.values()}
+        n = (con.execute("SELECT MAX(sentence_id) FROM sentence WHERE sentence_id>=? AND sentence_id<?", (ID0, LIM)).fetchone()[0] or ID0 - 1) + 1 - ID0
+        assert ID0 + n < LIM, "ID 대역 초과"
+        rows = [r for r in con.execute("SELECT pattern_id,en,ko,context,hint,variants,model FROM own_gen WHERE status='ok' ORDER BY pattern_id").fetchall() if r[0] not in have]
+    else:
+        if con.execute("SELECT COUNT(*) FROM sentence WHERE sentence_id>=?", (ID0,)).fetchone()[0] and not a.redo:
+            sys.exit("이미 own 문장이 있습니다. 다시 반영하려면 --redo (기존 문장 ID가 바뀌므로 사용자 기록이 있으면 --append)")
+        con.execute("DELETE FROM sentence_answer WHERE sentence_id>=?", (ID0,)); con.execute("DELETE FROM sentence WHERE sentence_id>=?", (ID0,))
+        assert con.execute("SELECT MAX(sentence_id) FROM sentence").fetchone()[0] < ID0, "ID 대역 충돌"
+        seen, n = set(), 0
+        rows = con.execute("SELECT pattern_id,en,ko,context,hint,variants,model FROM own_gen WHERE status='ok' ORDER BY pattern_id").fetchall()
+    base = n
+    for pid, en, ko, ctx, hint, variants, model in rows:
         if norm(en) in seen: continue  # 신규끼리 중복 제거
         seen.add(norm(en)); sid = ID0 + n; n += 1
         lv = con.execute("SELECT level FROM pattern_master WHERE pattern_id=?", (pid,)).fetchone()[0]
@@ -273,7 +286,7 @@ def cmd_apply(a):
         for v in json.loads(variants or "[]"):
             con.execute("INSERT INTO sentence_answer VALUES (?,?,?,?)", (sid, v, "variant_ai", 2))
     con.commit()
-    print(f"own 문장 {n}개 반영 / 패턴 {con.execute('SELECT COUNT(*) FROM pattern_master WHERE flag!=\"merge\"').fetchone()[0]}개 중")
+    print(f"own 문장 {n - base if a.append else n}개 {'추가' if a.append else '반영'} / 패턴 {con.execute('SELECT COUNT(*) FROM pattern_master WHERE flag!=\"merge\"').fetchone()[0]}개 중")
 
 
 if __name__ == "__main__":
@@ -282,5 +295,6 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=0); ap.add_argument("--pilot", action="store_true")
     ap.add_argument("--model", default="sonnet"); ap.add_argument("--batch", type=int, default=20)
     ap.add_argument("--workers", type=int, default=1); ap.add_argument("--redo", action="store_true")
+    ap.add_argument("--append", action="store_true"); ap.add_argument("--reclass", default="")
     a = ap.parse_args()
     {"gen": cmd_gen, "review": cmd_review, "apply": cmd_apply, "report": cmd_report, "classify": cmd_classify}[a.cmd](a)
